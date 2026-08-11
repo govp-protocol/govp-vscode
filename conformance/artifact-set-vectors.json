@@ -1,0 +1,14 @@
+{
+  "schema": "org.govp.workbench-artifact-set-vectors/1",
+  "vectors": [
+    {
+      "id": "utf8-order-not-locale",
+      "artifacts": [
+        { "path": "zeta.txt", "artifactType": "text", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "sizeBytes": 0 },
+        { "path": "äther.txt", "artifactType": "text", "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "sizeBytes": 0 },
+        { "path": "Alpha.txt", "artifactType": "text", "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "sizeBytes": 0 }
+      ],
+      "artifactSetSha256": "7747710849991772cd3b42aa96ecfba587aea82ef89c96c3d6082a8a1c81cf06"
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://govp.io/schema/workbench-policy-1.schema.json",
+  "title": "GOVP Workbench policy 1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "version", "projectId", "requiredReceipts", "observe", "publication"],
+  "properties": {
+    "schema": { "const": "org.govp.workbench-policy/1" },
+    "version": { "const": 1 },
+    "projectId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{2,127}$" },
+    "requiredReceipts": {
+      "type": "array", "uniqueItems": true,
+      "items": { "enum": ["task", "test", "build", "release", "manual"] }
+    },
+    "observe": {
+      "type": "array", "uniqueItems": true,
+      "items": { "enum": ["task", "test", "build", "release"] }
+    },
+    "publication": {
+      "type": "object", "additionalProperties": false,
+      "required": ["disposition", "enqueue"],
+      "properties": {
+        "disposition": { "enum": ["publish", "sealed_private"] },
+        "enqueue": { "type": "boolean" }
+      }
+    }
+  }
+}

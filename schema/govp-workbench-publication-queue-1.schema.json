@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://govp.io/schema/workbench-publication-queue-1.schema.json",
+  "title": "GOVP Workbench publication queue 1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "id", "enqueued_at", "state", "disposition", "domain", "canonical", "receipt_path", "receipt_sha256"],
+  "properties": {
+    "schema": { "const": "org.govp.workbench-publication-queue/1" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "enqueued_at": { "type": "string", "format": "date-time" },
+    "state": { "const": "queued" },
+    "disposition": { "enum": ["publish", "sealed_private"] },
+    "domain": { "type": "string", "format": "uri", "pattern": "^https://" },
+    "canonical": { "type": "string", "format": "uri", "pattern": "^https://[^/?#]+/\\.well-known/govp\\.txt$" },
+    "receipt_path": { "type": "string", "pattern": "^\\.govp/receipts/[A-Za-z0-9._-]+\\.json$" },
+    "receipt_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

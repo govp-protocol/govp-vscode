@@ -1,0 +1,9 @@
+{
+  "schema": "org.govp.extension-registry/1",
+  "entries": [
+    { "id": "org.govp.workbench", "version": "1.0.0", "eventType": "org.govp.workbench-event/1", "receiptSchema": "org.govp.workbench-receipt/1", "status": "active" },
+    { "id": "org.govp.source-mapping", "version": "1.0.0", "schema": "org.govp.source-mapping/1", "status": "active" },
+    { "id": "org.govp.workbench-policy", "version": "1.0.0", "schema": "org.govp.workbench-policy/1", "status": "active" },
+    { "id": "org.govp.workbench-publication-queue", "version": "1.0.0", "schema": "org.govp.workbench-publication-queue/1", "status": "active" }
+  ]
+}

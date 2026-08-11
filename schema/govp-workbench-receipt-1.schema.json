@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://govp.io/schema/workbench-receipt-1.schema.json",
+  "title": "GOVP Workbench receipt 1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "created_at", "subject_base64", "envelope", "verdict"],
+  "properties": {
+    "schema": { "const": "org.govp.workbench-receipt/1" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "subject_base64": { "type": "string", "contentEncoding": "base64" },
+    "envelope": { "type": "object" },
+    "verdict": {
+      "type": "object", "additionalProperties": false,
+      "required": ["label", "layers", "warnings", "reasons"],
+      "properties": {
+        "label": { "enum": ["Íntegro (pendiente de L1)", "evidence_authentic", "currently_trusted", "No íntegro"] },
+        "layers": {
+          "type": "object", "additionalProperties": false, "required": ["L0", "L1", "L2"],
+          "properties": { "L0": { "type": "boolean" }, "L1": { "type": ["boolean", "null"] }, "L2": { "type": ["boolean", "null"] } }
+        },
+        "warnings": { "type": "array", "items": { "type": "string" } },
+        "reasons": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}
