@@ -29,8 +29,18 @@ export type ImplementationSnapshot = {
     artifact_set_sha256?: string;
     created_at?: string;
   } | null;
+  deploymentApproved: boolean;
   approvalsAreHumanOnly: true;
   productionMutationAllowed: false;
+};
+
+export type ConformanceRun = {
+  status: 'passed';
+  total_count: number;
+  passed_count: number;
+  artifact_set_sha256: string;
+  created_at: string;
+  results: Record<string, unknown>[];
 };
 
 export type BundleArtifact = {
@@ -47,6 +57,7 @@ export type ArtifactInventory = {
 };
 
 export type ArtifactContent = BundleArtifact & { content: string };
+export type ArtifactBundle = { inventory: ArtifactInventory; artifacts: ArtifactContent[]; detachedManifestContent: string };
 
 export type NextAction = {
   label: string;
@@ -67,6 +78,7 @@ export type SourceMapping = {
 };
 
 const SHA256 = /^[0-9a-f]{64}$/u;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const SAFE_FIELD = /^[A-Za-z][A-Za-z0-9_.-]{0,127}$/u;
 const MAX_ARTIFACTS = 500;
 const MAX_ARTIFACT_BYTES = 2 * 1024 * 1024;
@@ -92,7 +104,7 @@ const nextActions: Record<ImplementationState, NextAction> = {
   awaiting_spec_approval: { label: 'Revisar y decidir', detail: 'La aprobación pertenece al partner.', command: 'human-spec', humanRequired: true },
   building: { label: 'Actualizar estado', detail: 'El bundle se está construyendo.', command: 'refresh', humanRequired: false },
   testing: { label: 'Actualizar estado', detail: 'Las pruebas están en curso.', command: 'refresh', humanRequired: false },
-  awaiting_deployment_approval: { label: 'Revisar pruebas y decidir', detail: 'La activación de Lab requiere una persona.', command: 'human-deployment', humanRequired: true },
+  awaiting_deployment_approval: { label: 'Revisar pruebas y decidir', detail: 'GOVP mostrará las pruebas antes de abrir la decisión humana.', command: 'human-deployment', humanRequired: true },
   activating_reference: { label: 'Actualizar estado', detail: 'La referencia firmada se está activando.', command: 'refresh', humanRequired: false },
   active_lab: { label: 'Integrar en este proyecto', detail: 'Aplica solo archivos seguros después de comprobar el bundle.', command: 'integrate', humanRequired: false },
   frozen: { label: 'Abrir canal de partners', detail: 'Solo el partner puede reactivar la implantación.', command: 'recover', humanRequired: true },
@@ -143,11 +155,13 @@ export function isImplementationState(value: unknown): value is ImplementationSt
   return typeof value === 'string' && (IMPLEMENTATION_STATES as readonly string[]).includes(value);
 }
 
-export function implementationStateLabel(state: ImplementationState): string {
+export function implementationStateLabel(state: ImplementationState, deploymentApproved = false): string {
+  if (state === 'awaiting_deployment_approval' && deploymentApproved) return 'Bundle autorizado';
   return stateLabels[state];
 }
 
-export function implementationNextAction(state: ImplementationState): NextAction {
+export function implementationNextAction(state: ImplementationState, deploymentApproved = false): NextAction {
+  if (state === 'awaiting_deployment_approval' && deploymentApproved) return nextActions.active_lab;
   return nextActions[state];
 }
 
@@ -232,13 +246,18 @@ export function parseToolJson<T>(parts: readonly unknown[]): T {
 export function parseImplementation(value: unknown): ImplementationSnapshot {
   if (!isRecord(value) || !exactKeys(value, [
     'id', 'state', 'servicePackId', 'specVersion', 'specSha256', 'artifactSetSha256',
-    'tests', 'approvalsAreHumanOnly', 'productionMutationAllowed',
+    'tests', 'deploymentApproved', 'approvalsAreHumanOnly', 'productionMutationAllowed',
   ])) throw new Error('La implantación no tiene un formato válido.');
   if (!isImplementationState(value.state) || typeof value.id !== 'string' || typeof value.servicePackId !== 'string') {
     throw new Error('La implantación está incompleta.');
   }
   if (value.approvalsAreHumanOnly !== true || value.productionMutationAllowed !== false) {
     throw new Error('La implantación remota no respeta los límites humanos y de producción.');
+  }
+  if (typeof value.deploymentApproved !== 'boolean'
+    || (value.deploymentApproved && (!value.artifactSetSha256
+      || !['awaiting_deployment_approval', 'activating_reference', 'active_lab'].includes(value.state)))) {
+    throw new Error('La aprobación de despliegue no corresponde al bundle actual.');
   }
   for (const digest of [value.specSha256, value.artifactSetSha256]) {
     if (digest !== null && (typeof digest !== 'string' || !SHA256.test(digest))) throw new Error('La implantación contiene una huella inválida.');
@@ -251,6 +270,22 @@ export function parseImplementation(value: unknown): ImplementationSnapshot {
     }
   }
   return value as ImplementationSnapshot;
+}
+
+export function parseConformanceRun(value: unknown, expectedDigest: string): ConformanceRun {
+  if (!SHA256.test(expectedDigest) || !isRecord(value) || !exactKeys(value, [
+    'status', 'total_count', 'passed_count', 'artifact_set_sha256', 'created_at', 'results',
+  ])) throw new Error('Las pruebas remotas no tienen un formato válido.');
+  if (value.status !== 'passed'
+    || !Number.isSafeInteger(value.total_count) || Number(value.total_count) < 1 || Number(value.total_count) > 50
+    || !Number.isSafeInteger(value.passed_count) || value.passed_count !== value.total_count
+    || value.artifact_set_sha256 !== expectedDigest
+    || typeof value.created_at !== 'string' || !Number.isFinite(Date.parse(value.created_at))
+    || !Array.isArray(value.results) || value.results.length !== value.total_count
+    || value.results.some((result) => !isRecord(result))) {
+    throw new Error('Las pruebas no están completas o no están ligadas al bundle actual.');
+  }
+  return value as ConformanceRun;
 }
 
 export function safeArtifactPath(input: string): string {
@@ -327,6 +362,43 @@ export function verifyArtifactContent(expected: BundleArtifact, value: unknown):
     throw new Error(`El artefacto no coincide con el inventario aprobado: ${expected.path}`);
   }
   return { ...expected, content: value.content };
+}
+
+export function parseArtifactBundle(value: unknown, approvedDigest: string): ArtifactBundle {
+  if (!isRecord(value) || !exactKeys(value, ['artifactSetSha256', 'count', 'artifacts', 'detachedManifest'])
+    || !Array.isArray(value.artifacts)) throw new Error('El bundle remoto no tiene un formato válido.');
+  const remoteArtifacts = value.artifacts;
+  const inventory = parseArtifactInventory({
+    artifactSetSha256: value.artifactSetSha256,
+    count: value.count,
+    artifacts: remoteArtifacts.map((item) => {
+      if (!isRecord(item)) throw new Error('El bundle remoto contiene un artefacto inválido.');
+      return {
+        path: item.path,
+        artifactType: item.artifactType,
+        sha256: item.sha256,
+        sizeBytes: item.sizeBytes,
+      };
+    }),
+  }, approvedDigest);
+  const artifacts = inventory.artifacts.map((expected, index) =>
+    verifyArtifactContent(expected, remoteArtifacts[index]));
+  const manifest = value.detachedManifest;
+  if (!isRecord(manifest) || !exactKeys(manifest, ['schema', 'serviceProjectId', 'servicePackId', 'bundleVersion', 'artifactSetSha256', 'files'])
+    || manifest.schema !== 'org.govp.partner.bundle-manifest/0.1'
+    || typeof manifest.serviceProjectId !== 'string' || !UUID.test(manifest.serviceProjectId)
+    || typeof manifest.servicePackId !== 'string' || !manifest.servicePackId
+    || !Number.isSafeInteger(manifest.bundleVersion) || Number(manifest.bundleVersion) < 1
+    || manifest.artifactSetSha256 !== approvedDigest || !Array.isArray(manifest.files)
+    || manifest.files.length !== inventory.artifacts.length) throw new Error('El manifiesto separado no es válido.');
+  manifest.files.forEach((file, index) => {
+    const expected = inventory.artifacts[index];
+    if (!expected || !isRecord(file) || !exactKeys(file, ['path', 'artifactType', 'sha256'])
+      || file.path !== expected.path || file.artifactType !== expected.artifactType || file.sha256 !== expected.sha256) {
+      throw new Error('El manifiesto separado no coincide con el inventario aprobado.');
+    }
+  });
+  return { inventory, artifacts, detachedManifestContent: `${JSON.stringify(manifest, null, 2)}\n` };
 }
 
 export function parseSourceMapping(value: unknown): SourceMapping {

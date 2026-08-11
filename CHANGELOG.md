@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.3.6
+
+- Incluye y valida el manifiesto separado requerido por `verify-bundle`.
+- El kit aislado instalado desde VS Code queda ejecutable y verificable sin completar archivos a mano.
+
+## 0.3.5
+
+- Instala el bundle funcional completo en una carpeta aislada ligada a su huella.
+- Conserva los cuatro `package.json` sin tocar ni sobrescribir el proyecto del cliente.
+- La instalación es reversible eliminando únicamente esa carpeta de huella.
+
+## 0.3.4
+
+- Descarga y verifica el bundle autorizado con una sola confirmación MCP.
+- Conserva la verificación por artefacto y la huella global antes de escribir.
+- Elimina el flujo impracticable de una autorización por cada archivo.
+
+## 0.3.3
+
+- Reconoce una aprobación de piloto externo ligada a la huella actual sin afirmar que producción esté activa.
+- Permite revisar e integrar el bundle autorizado directamente desde VS Code.
+
+## 0.3.2
+
+- Consulta `run_conformance_suite` antes de abrir la decisión humana del bundle.
+- Rechaza resultados incompletos o ligados a una huella distinta.
+- Muestra el detalle 4/4 dentro de VS Code antes de continuar al canal de partners.
+
 ## 0.3.1
 
 - Corrige la vinculación exacta con el namespace que VS Code asigna a GOVP Implementation MCP.

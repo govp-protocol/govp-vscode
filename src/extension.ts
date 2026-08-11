@@ -8,13 +8,14 @@ import {
   checkedMcpEndpoint,
   compareUtf8,
   domainFromCandidates,
-  executablePathReason,
   findGovpToolName,
   humanBytes,
   implementationNextAction,
   implementationStateLabel,
   normalizeDomain,
   parseArtifactInventory,
+  parseArtifactBundle,
+  parseConformanceRun,
   parseImplementation,
   parseSourceMapping,
   parseToolJson,
@@ -22,7 +23,9 @@ import {
   shortDigest,
   verifyArtifactContent,
   type ArtifactContent,
+  type ArtifactBundle,
   type ArtifactInventory,
+  type ConformanceRun,
   type ImplementationSnapshot,
 } from './core.js';
 import {
@@ -43,7 +46,7 @@ import {
 } from './local.js';
 
 const MCP_PROVIDER_ID = 'govp.automatic-workbench.mcp';
-const MCP_VERSION = '0.3.1';
+const MCP_VERSION = '0.3.6';
 const output = vscode.window.createOutputChannel('GOVP Automatic Workbench', { log: true });
 const decoder = new TextDecoder('utf-8', { fatal: true });
 const encoder = new TextEncoder();
@@ -468,9 +471,18 @@ class RemoteWorkbench {
 
   async continueImplementation(): Promise<void> {
     if (!this.state.implementation) { await this.connect(); return; }
-    const next = implementationNextAction(this.state.implementation.state);
+    const next = implementationNextAction(
+      this.state.implementation.state,
+      this.state.implementation.deploymentApproved,
+    );
     if (next.command === 'refresh') { await this.refresh(); return; }
-    if (next.command === 'human-spec' || next.command === 'human-deployment') {
+    if (next.command === 'human-deployment') {
+      await this.runTests();
+      await invokeGovp('request_approval', { gate: 'deployment' });
+      const url = partnerUrl(); if (url) await vscode.env.openExternal(url); else void vscode.window.showInformationMessage('La aprobación es humana. Configura govp.partnerUrl para abrir el canal.');
+      return;
+    }
+    if (next.command === 'human-spec') {
       await invokeGovp('request_approval', { gate: next.command === 'human-spec' ? 'specification' : 'deployment' });
       const url = partnerUrl(); if (url) await vscode.env.openExternal(url); else void vscode.window.showInformationMessage('La aprobación es humana. Configura govp.partnerUrl para abrir el canal.');
       return;
@@ -480,9 +492,25 @@ class RemoteWorkbench {
     const url = partnerUrl(); if (url) await vscode.env.openExternal(url); else throw new Error('Configura govp.partnerUrl para revisar esta incidencia.');
   }
 
+  async runTests(): Promise<ConformanceRun> {
+    const implementation = this.state.implementation;
+    if (!implementation?.artifactSetSha256) throw new Error('No existe un bundle actual para comprobar.');
+    const run = parseConformanceRun(
+      await invokeGovp<unknown>('run_conformance_suite'),
+      implementation.artifactSetSha256,
+    );
+    await previewJson(run, 'Pruebas remotas');
+    void vscode.window.showInformationMessage(`${run.passed_count}/${run.total_count} pruebas ligadas al bundle superadas.`);
+    return run;
+  }
+
   async loadInventory(): Promise<ArtifactInventory> {
     const implementation = this.state.implementation;
-    if (!implementation || implementation.state !== 'active_lab' || !implementation.artifactSetSha256) throw new Error('No existe un bundle activo y aprobado para integrar.');
+    if (!implementation || !implementation.artifactSetSha256
+      || !(implementation.state === 'active_lab'
+        || (implementation.state === 'awaiting_deployment_approval' && implementation.deploymentApproved))) {
+      throw new Error('No existe un bundle activo y aprobado para integrar.');
+    }
     const inventory = parseArtifactInventory(await invokeGovp<unknown>('list_bundle_artifacts', { implementationId: implementation.id }), implementation.artifactSetSha256);
     this.update({ inventory }); return inventory;
   }
@@ -493,6 +521,19 @@ class RemoteWorkbench {
     return verifyArtifactContent(expected, await invokeGovp<unknown>('get_bundle_artifact', {
       implementationId: implementation.id, artifactSetSha256: implementation.artifactSetSha256, path: expected.path,
     }));
+  }
+
+  async loadBundle(): Promise<ArtifactBundle> {
+    const implementation = this.state.implementation;
+    if (!implementation?.artifactSetSha256 || !implementation.deploymentApproved) {
+      throw new Error('No existe un bundle autorizado para integrar.');
+    }
+    const bundle = parseArtifactBundle(await invokeGovp<unknown>('get_bundle', {
+      implementationId: implementation.id,
+      artifactSetSha256: implementation.artifactSetSha256,
+    }), implementation.artifactSetSha256);
+    this.update({ inventory: bundle.inventory });
+    return bundle;
   }
 }
 
@@ -516,15 +557,15 @@ async function assertNoSymlink(uri: vscode.Uri, root: vscode.Uri): Promise<void>
   }
 }
 
-async function preflightBundle(folder: vscode.WorkspaceFolder, remote: RemoteWorkbench): Promise<{ inventory: ArtifactInventory; artifacts: ArtifactContent[]; creates: ArtifactContent[]; identical: string[]; excluded: string[] }> {
-  const inventory = await remote.loadInventory();
-  const artifacts: ArtifactContent[] = [];
-  for (const item of inventory.artifacts) artifacts.push(await remote.artifact(item));
-  const creates: ArtifactContent[] = []; const identical: string[] = []; const excluded: string[] = [];
+function bundleTarget(folder: vscode.WorkspaceFolder, digest: string, artifactPath: string): vscode.Uri {
+  return vscode.Uri.joinPath(folder.uri, '.govp', 'implementations', digest, ...safeArtifactPath(artifactPath).split('/'));
+}
+
+async function preflightBundle(folder: vscode.WorkspaceFolder, remote: RemoteWorkbench): Promise<{ inventory: ArtifactInventory; artifacts: ArtifactContent[]; creates: ArtifactContent[]; identical: string[]; detachedManifestContent: string; manifestIdentical: boolean }> {
+  const { inventory, artifacts, detachedManifestContent } = await remote.loadBundle();
+  const creates: ArtifactContent[] = []; const identical: string[] = [];
   for (const artifact of artifacts) {
-    const reason = executablePathReason(artifact.path);
-    if (reason) { excluded.push(`${artifact.path} (${reason})`); continue; }
-    const target = vscode.Uri.joinPath(folder.uri, ...safeArtifactPath(artifact.path).split('/'));
+    const target = bundleTarget(folder, inventory.artifactSetSha256, artifact.path);
     await assertNoSymlink(target, folder.uri);
     try {
       const current = await vscode.workspace.fs.readFile(target);
@@ -533,7 +574,15 @@ async function preflightBundle(folder: vscode.WorkspaceFolder, remote: RemoteWor
       identical.push(artifact.path);
     } catch (error) { if (isNotFound(error)) creates.push(artifact); else throw error; }
   }
-  return { inventory, artifacts, creates, identical, excluded };
+  const manifestTarget = bundleTarget(folder, inventory.artifactSetSha256, '.govp/bundle-manifest.json');
+  await assertNoSymlink(manifestTarget, folder.uri);
+  let manifestIdentical = false;
+  try {
+    const current = await vscode.workspace.fs.readFile(manifestTarget);
+    if (!Buffer.from(current).equals(Buffer.from(detachedManifestContent, 'utf8'))) throw new Error('Conflicto: el manifiesto separado ya existe con otro contenido.');
+    manifestIdentical = true;
+  } catch (error) { if (!isNotFound(error)) throw error; }
+  return { inventory, artifacts, creates, identical, detachedManifestContent, manifestIdentical };
 }
 
 async function previewJson(value: unknown, title: string): Promise<void> {
@@ -574,9 +623,9 @@ class GovpView implements vscode.WebviewViewProvider {
         <button data-command="govp.${status?.policyPersisted ? 'captureEvidence' : 'initializeLocal'}">${status?.policyPersisted ? 'Registrar trabajo terminado' : 'Preparar este proyecto'}</button>
         <button class="secondary" data-command="govp.showLocalStatus">Comprobar estado</button>
       </div>
-      <h3>Implantación remota</h3><div class="card"><strong>${remote.implementation ? escapeHtml(implementationStateLabel(remote.implementation.state)) : mcpConfigured ? 'Preparada para conectar' : 'Opcional'}</strong>
+      <h3>Implantación remota</h3><div class="card"><strong>${remote.implementation ? escapeHtml(implementationStateLabel(remote.implementation.state, remote.implementation.deploymentApproved)) : mcpConfigured ? 'Preparada para conectar' : 'Opcional'}</strong>
         <div class="muted">${escapeHtml(remote.notice)}</div>${remote.implementation ? `<div class="muted">${escapeHtml(shortDigest(remote.implementation.artifactSetSha256))}</div>` : ''}${remote.error ? `<div class="error">${escapeHtml(remote.error)}</div>` : ''}
-        <button class="secondary" data-command="govp.${remote.implementation ? 'continue' : 'connect'}">${remote.implementation ? escapeHtml(implementationNextAction(remote.implementation.state).label) : mcpConfigured ? 'Conectar GOVP' : 'Configurar MCP'}</button>
+        <button class="secondary" data-command="govp.${remote.implementation ? 'continue' : 'connect'}">${remote.implementation ? escapeHtml(implementationNextAction(remote.implementation.state, remote.implementation.deploymentApproved).label) : mcpConfigured ? 'Conectar GOVP' : 'Configurar MCP'}</button>
       </div>
       <script nonce="${token}">const vscode=acquireVsCodeApi();document.querySelectorAll('button[data-command]').forEach((button)=>button.addEventListener('click',()=>vscode.postMessage({command:button.dataset.command})));</script></body></html>`;
   }
@@ -631,27 +680,33 @@ export function activate(context: vscode.ExtensionContext): void {
   register('govp.connect', () => remote.connect());
   register('govp.refresh', async () => { await remote.refresh(); await view.refresh(); });
   register('govp.continue', () => remote.continueImplementation());
-  register('govp.runTests', async () => { await remote.refresh(); const tests = remote.state.implementation?.tests; if (!tests) throw new Error('La implantación no contiene resultados de pruebas ligados al bundle.'); await previewJson(tests, 'Pruebas remotas'); });
-  register('govp.showArtifacts', async () => { const inventory = await remote.loadInventory(); const verified: Array<{ path: string; sha256: string; sizeBytes: number }> = []; for (const item of inventory.artifacts) { const artifact = await remote.artifact(item); verified.push({ path: artifact.path, sha256: artifact.sha256, sizeBytes: artifact.sizeBytes }); } await previewJson({ approvedArtifactSetSha256: inventory.artifactSetSha256, verified }, 'Bundle verificado'); });
+  register('govp.runTests', async () => { await remote.refresh(); await remote.runTests(); });
+  register('govp.showArtifacts', async () => { const bundle = await remote.loadBundle(); const verified = bundle.artifacts.map((artifact) => ({ path: artifact.path, sha256: artifact.sha256, sizeBytes: artifact.sizeBytes })); await previewJson({ approvedArtifactSetSha256: bundle.inventory.artifactSetSha256, verified }, 'Bundle verificado'); });
   register('govp.applyBundle', async () => {
     const folder = workspaceFolderFor(); if (!folder) throw new Error('Abre una carpeta local.'); if (!vscode.workspace.isTrusted) throw new Error('Confía en el proyecto para integrar archivos.');
     const plan = await preflightBundle(folder, remote);
-    await previewJson({ phase: 'preflight', approvedArtifactSetSha256: plan.inventory.artifactSetSha256, create: plan.creates.map((item) => item.path), identical: plan.identical, excludedExecutablePaths: plan.excluded }, 'Previsualización del bundle');
-    const answer = await vscode.window.showWarningMessage(`Crear ${plan.creates.length} archivos del bundle ${shortDigest(plan.inventory.artifactSetSha256)}. No se sobrescribirá nada.`, { modal: true }, 'Aplicar exactamente este bundle');
-    if (answer !== 'Aplicar exactamente este bundle') throw new vscode.CancellationError();
+    const relativeRoot = `.govp/implementations/${plan.inventory.artifactSetSha256}`;
+    const createCount = plan.creates.length + (plan.manifestIdentical ? 0 : 1);
+    await previewJson({ phase: 'preflight', approvedArtifactSetSha256: plan.inventory.artifactSetSha256, isolatedDestination: relativeRoot, create: [...plan.creates.map((item) => item.path), ...(plan.manifestIdentical ? [] : ['.govp/bundle-manifest.json'])], identical: [...plan.identical, ...(plan.manifestIdentical ? ['.govp/bundle-manifest.json'] : [])] }, 'Previsualización del bundle');
+    const answer = await vscode.window.showWarningMessage(`Instalar ${createCount} archivos en ${relativeRoot}. El proyecto actual no se modificará.`, { modal: true }, 'Instalar bundle completo');
+    if (answer !== 'Instalar bundle completo') throw new vscode.CancellationError();
     const created: vscode.Uri[] = [];
     try {
       for (const artifact of plan.creates) {
-        const target = vscode.Uri.joinPath(folder.uri, ...artifact.path.split('/')); await assertNoSymlink(target, folder.uri);
+        const target = bundleTarget(folder, plan.inventory.artifactSetSha256, artifact.path); await assertNoSymlink(target, folder.uri);
         await atomicCreate(target, encoder.encode(artifact.content)); created.push(target);
+      }
+      if (!plan.manifestIdentical) {
+        const target = bundleTarget(folder, plan.inventory.artifactSetSha256, '.govp/bundle-manifest.json'); await assertNoSymlink(target, folder.uri);
+        await atomicCreate(target, encoder.encode(plan.detachedManifestContent)); created.push(target);
       }
     } catch (error) {
       for (const target of created.reverse()) try { await vscode.workspace.fs.delete(target); } catch { /* Report original failure. */ }
       throw new Error(`La integración se revirtió: ${errorMessage(error)}`);
     }
-    void vscode.window.showInformationMessage(`${created.length} archivos creados y ${plan.identical.length} ya idénticos. ${plan.excluded.length} rutas ejecutables excluidas.`);
+    void vscode.window.showInformationMessage(`Bundle completo instalado: ${created.length} archivos creados y ${plan.identical.length + (plan.manifestIdentical ? 1 : 0)} ya idénticos. Abre ${relativeRoot} para ejecutarlo.`);
   });
-  register('govp.compareWorkspace', async () => { const plan = await preflightBundle(workspaceFolderFor() ?? (() => { throw new Error('Abre una carpeta.'); })(), remote); await previewJson({ approvedArtifactSetSha256: plan.inventory.artifactSetSha256, toCreate: plan.creates.map((item) => item.path), identical: plan.identical, excluded: plan.excluded }, 'Comparación'); });
+  register('govp.compareWorkspace', async () => { const plan = await preflightBundle(workspaceFolderFor() ?? (() => { throw new Error('Abre una carpeta.'); })(), remote); await previewJson({ approvedArtifactSetSha256: plan.inventory.artifactSetSha256, isolatedDestination: `.govp/implementations/${plan.inventory.artifactSetSha256}`, toCreate: [...plan.creates.map((item) => item.path), ...(plan.manifestIdentical ? [] : ['.govp/bundle-manifest.json'])], identical: [...plan.identical, ...(plan.manifestIdentical ? ['.govp/bundle-manifest.json'] : [])] }, 'Comparación'); });
   register('govp.validateMapping', async () => {
     const folder = workspaceFolderFor(); if (!folder) throw new Error('Abre una carpeta.');
     const uri = vscode.Uri.joinPath(folder.uri, '.govp', 'source-mapping.json');

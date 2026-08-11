@@ -1,4 +1,4 @@
-# Threat model — GOVP Automatic Workbench 0.3.1
+# Threat model — GOVP Automatic Workbench 0.3.6
 
 ## Activos y fronteras
 
@@ -9,7 +9,7 @@ Los activos son la identidad local, los recibos, su cadena, la política, la col
 - **MCP impostor:** una herramienta solo se invoca si pertenece al namespace configurado de forma no ambigua.
 - **Bundle cambiado:** inventario y contenidos se vuelven a hashear y deben coincidir con el `artifactSetSha256` aprobado y con las pruebas.
 - **TOCTOU y sobrescritura:** preflight completo, confirmación humana ligada a la huella, creación atómica sin overwrite, nueva comprobación de symlinks y rollback de lo creado.
-- **Ejecución encubierta:** `.git/hooks/`, `.vscode/`, `.github/workflows/`, `.devcontainer/`, `.envrc`, `package.json` y `Makefile` nunca se aplican.
+- **Ejecución encubierta:** el bundle completo se instala bajo `.govp/implementations/<huella>/`; no sobrescribe el proyecto, no registra tareas ni ejecuta scripts automáticamente.
 - **Path traversal/colisiones:** rutas absolutas, vacías, `..`, variantes de separador, duplicados NFC o por mayúsculas se rechazan.
 - **Recibo inventado o editado:** el evento queda dentro del payload firmado, el subject externo queda ligado por SHA-256 y se verifica antes y después de escribir.
 - **Borrado de un eslabón:** cada recibo referencia ID y digest del anterior; el gate local informa referencias ausentes o distintas.

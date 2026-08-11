@@ -4,7 +4,8 @@ import test from 'node:test';
 
 import {
   artifactSetDigest, domainFromCandidates, executablePathReason, findGovpToolName, parseArtifactInventory,
-  parseImplementation, parseSourceMapping, safeArtifactPath, verifyArtifactContent,
+  implementationNextAction, implementationStateLabel, parseArtifactBundle, parseConformanceRun, parseImplementation,
+  parseSourceMapping, safeArtifactPath, verifyArtifactContent,
 } from '../src/core.js';
 
 test('artifact set matches the shared UTF-8 vector', async () => {
@@ -27,10 +28,24 @@ test('an inferred project URL resolves only to its HTTPS owner origin', () => {
 
 test('runtime safety flags and test digest are enforced', () => {
   const digest = 'a'.repeat(64);
-  const base = { id: 'x', state: 'active_lab', servicePackId: 's', specVersion: 1, specSha256: digest, artifactSetSha256: digest, tests: { artifact_set_sha256: digest }, approvalsAreHumanOnly: true, productionMutationAllowed: false };
+  const base = { id: 'x', state: 'active_lab', servicePackId: 's', specVersion: 1, specSha256: digest, artifactSetSha256: digest, tests: { artifact_set_sha256: digest }, deploymentApproved: true, approvalsAreHumanOnly: true, productionMutationAllowed: false };
   assert.equal(parseImplementation(base).state, 'active_lab');
   assert.throws(() => parseImplementation({ ...base, productionMutationAllowed: true }));
   assert.throws(() => parseImplementation({ ...base, tests: { artifact_set_sha256: 'b'.repeat(64) } }));
+});
+
+test('remote conformance must be complete and bound to the current bundle', () => {
+  const digest = 'a'.repeat(64);
+  const run = { status: 'passed', total_count: 4, passed_count: 4, artifact_set_sha256: digest, created_at: '2026-08-11T21:00:00.000Z', results: [{}, {}, {}, {}] };
+  assert.equal(parseConformanceRun(run, digest).passed_count, 4);
+  assert.throws(() => parseConformanceRun({ ...run, passed_count: 3 }, digest));
+  assert.throws(() => parseConformanceRun({ ...run, artifact_set_sha256: 'b'.repeat(64) }, digest));
+});
+
+test('an externally approved bundle becomes integrable without claiming production activation', () => {
+  assert.equal(implementationStateLabel('awaiting_deployment_approval', true), 'Bundle autorizado');
+  assert.equal(implementationNextAction('awaiting_deployment_approval', true).command, 'integrate');
+  assert.equal(implementationNextAction('awaiting_deployment_approval', false).command, 'human-deployment');
 });
 
 test('inventory and content remain bound to the approved digest', () => {
@@ -40,6 +55,12 @@ test('inventory and content remain bound to the approved digest', () => {
   const inventory = parseArtifactInventory({ artifactSetSha256: approved, count: 1, artifacts }, approved);
   assert.equal(verifyArtifactContent(inventory.artifacts[0]!, { ...artifacts[0], content }).content, content);
   assert.throws(() => verifyArtifactContent(inventory.artifacts[0]!, { ...artifacts[0], content: 'evil!\n', sizeBytes: 6 }));
+  const detachedManifest = { schema: 'org.govp.partner.bundle-manifest/0.1', serviceProjectId: '76e20aab-ddc6-47a0-85c6-a96c8561a402', servicePackId: 'supplier-lot-evidence', bundleVersion: 2, artifactSetSha256: approved, files: artifacts.map(({ path, artifactType, sha256: digest }) => ({ path, artifactType, sha256: digest })) };
+  const bundle = parseArtifactBundle({ artifactSetSha256: approved, count: 1, artifacts: [{ ...artifacts[0], content }], detachedManifest }, approved);
+  assert.equal(bundle.artifacts[0]?.content, content);
+  assert.match(bundle.detachedManifestContent, /bundle-manifest\/0\.1/u);
+  assert.throws(() => parseArtifactBundle({ artifactSetSha256: approved, count: 1, artifacts: [{ ...artifacts[0], content: 'evil!\n' }], detachedManifest }, approved));
+  assert.throws(() => parseArtifactBundle({ artifactSetSha256: approved, count: 1, artifacts: [{ ...artifacts[0], content }], detachedManifest: { ...detachedManifest, files: [{ ...detachedManifest.files[0], sha256: 'b'.repeat(64) }] } }, approved));
 });
 
 test('executable and ambiguous paths are denied', () => {
