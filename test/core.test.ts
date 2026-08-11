@@ -16,6 +16,7 @@ test('provider selection never falls back to an unrelated tool', () => {
   assert.equal(findGovpToolName([{ name: 'evil_get_implementation' }], 'get_implementation', 'govp'), null);
   assert.equal(findGovpToolName([{ name: 'get_implementation', description: '[govp-provider:govp]' }], 'get_implementation', 'govp'), 'get_implementation');
   assert.equal(findGovpToolName([{ name: 'govp_get_implementation' }, { name: 'govp.get_implementation' }], 'get_implementation', 'govp'), null);
+  assert.equal(findGovpToolName([{ name: 'mcp_govp_implemen_get_implementation' }], 'get_implementation', 'mcp_govp_implemen'), 'mcp_govp_implemen_get_implementation');
 });
 
 test('an inferred project URL resolves only to its HTTPS owner origin', () => {

@@ -43,7 +43,7 @@ import {
 } from './local.js';
 
 const MCP_PROVIDER_ID = 'govp.automatic-workbench.mcp';
-const MCP_VERSION = '0.3.0';
+const MCP_VERSION = '0.3.1';
 const output = vscode.window.createOutputChannel('GOVP Automatic Workbench', { log: true });
 const decoder = new TextDecoder('utf-8', { fatal: true });
 const encoder = new TextEncoder();
@@ -424,7 +424,7 @@ function safeMcpEndpoint(folder?: vscode.WorkspaceFolder | null): string | null 
 }
 
 function providerNamespace(folder?: vscode.WorkspaceFolder | null): string {
-  return configuration(folder).get<string>('mcpProviderNamespace', 'mcp_govp_aw');
+  return configuration(folder).get<string>('mcpProviderNamespace', 'mcp_govp_implemen');
 }
 
 async function invokeGovp<T>(logicalName: string, input: Record<string, unknown> = {}): Promise<T> {
@@ -671,8 +671,8 @@ export function activate(context: vscode.ExtensionContext): void {
     provideMcpServerDefinitions: async () => {
       const endpoint = safeMcpEndpoint();
       await vscode.commands.executeCommand('setContext', 'govp.mcpConfigured', Boolean(endpoint));
-      // Keep this server label short and stable: VS Code derives the MCP tool namespace
-      // from it and truncates long labels. This produces mcp_govp_aw_<tool>.
+      // The MCP server identity is stable and VS Code exposes its tools under the
+      // provider-bound mcp_govp_implemen_<tool> namespace.
       return endpoint ? [new vscode.McpHttpServerDefinition('GOVP AW', vscode.Uri.parse(endpoint), {}, MCP_VERSION)] : [];
     },
   }));

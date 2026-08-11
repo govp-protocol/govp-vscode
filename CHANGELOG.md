@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1
+
+- Corrige la vinculación exacta con el namespace que VS Code asigna a GOVP Implementation MCP.
+- Mantiene el rechazo de herramientas homónimas publicadas por otros proveedores.
+
 ## 0.3.0
 
 - Añade operación local completa sin cuenta, red ni MCP.

@@ -1,4 +1,4 @@
-# Threat model — GOVP Automatic Workbench 0.3.0
+# Threat model — GOVP Automatic Workbench 0.3.1
 
 ## Activos y fronteras
 
