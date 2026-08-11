@@ -2,7 +2,7 @@
   "name": "govp-partner-workbench",
   "displayName": "GOVP Automatic Workbench",
   "description": "Crea, comprueba y prepara evidencias GOVP dentro de VS Code, incluso sin cuenta, red ni MCP.",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "publisher": "gemacode",
   "license": "Apache-2.0",
   "icon": "media/govp.png",

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.7
+
+- Ajusta los mensajes de instalación al singular y plural para mantener una UX clara.
+
 ## 0.3.6
 
 - Incluye y valida el manifiesto separado requerido por `verify-bundle`.

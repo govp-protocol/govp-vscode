@@ -46,7 +46,7 @@ import {
 } from './local.js';
 
 const MCP_PROVIDER_ID = 'govp.automatic-workbench.mcp';
-const MCP_VERSION = '0.3.6';
+const MCP_VERSION = '0.3.7';
 const output = vscode.window.createOutputChannel('GOVP Automatic Workbench', { log: true });
 const decoder = new TextDecoder('utf-8', { fatal: true });
 const encoder = new TextEncoder();
@@ -688,7 +688,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const relativeRoot = `.govp/implementations/${plan.inventory.artifactSetSha256}`;
     const createCount = plan.creates.length + (plan.manifestIdentical ? 0 : 1);
     await previewJson({ phase: 'preflight', approvedArtifactSetSha256: plan.inventory.artifactSetSha256, isolatedDestination: relativeRoot, create: [...plan.creates.map((item) => item.path), ...(plan.manifestIdentical ? [] : ['.govp/bundle-manifest.json'])], identical: [...plan.identical, ...(plan.manifestIdentical ? ['.govp/bundle-manifest.json'] : [])] }, 'Previsualización del bundle');
-    const answer = await vscode.window.showWarningMessage(`Instalar ${createCount} archivos en ${relativeRoot}. El proyecto actual no se modificará.`, { modal: true }, 'Instalar bundle completo');
+    const answer = await vscode.window.showWarningMessage(`Instalar ${createCount} ${createCount === 1 ? 'archivo' : 'archivos'} en ${relativeRoot}. El proyecto actual no se modificará.`, { modal: true }, 'Instalar bundle completo');
     if (answer !== 'Instalar bundle completo') throw new vscode.CancellationError();
     const created: vscode.Uri[] = [];
     try {
@@ -704,7 +704,7 @@ export function activate(context: vscode.ExtensionContext): void {
       for (const target of created.reverse()) try { await vscode.workspace.fs.delete(target); } catch { /* Report original failure. */ }
       throw new Error(`La integración se revirtió: ${errorMessage(error)}`);
     }
-    void vscode.window.showInformationMessage(`Bundle completo instalado: ${created.length} archivos creados y ${plan.identical.length + (plan.manifestIdentical ? 1 : 0)} ya idénticos. Abre ${relativeRoot} para ejecutarlo.`);
+    void vscode.window.showInformationMessage(`Bundle completo instalado: ${created.length} ${created.length === 1 ? 'archivo creado' : 'archivos creados'} y ${plan.identical.length + (plan.manifestIdentical ? 1 : 0)} ya idénticos. Abre ${relativeRoot} para ejecutarlo.`);
   });
   register('govp.compareWorkspace', async () => { const plan = await preflightBundle(workspaceFolderFor() ?? (() => { throw new Error('Abre una carpeta.'); })(), remote); await previewJson({ approvedArtifactSetSha256: plan.inventory.artifactSetSha256, isolatedDestination: `.govp/implementations/${plan.inventory.artifactSetSha256}`, toCreate: [...plan.creates.map((item) => item.path), ...(plan.manifestIdentical ? [] : ['.govp/bundle-manifest.json'])], identical: [...plan.identical, ...(plan.manifestIdentical ? ['.govp/bundle-manifest.json'] : [])] }, 'Comparación'); });
   register('govp.validateMapping', async () => {

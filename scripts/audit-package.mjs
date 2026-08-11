@@ -4,7 +4,7 @@ const packageJson = JSON.parse(await readFile(new URL('../package.json', import.
 const extension = await readFile(new URL('../dist/extension.js', import.meta.url), 'utf8');
 const icon = await stat(new URL('../media/govp.png', import.meta.url));
 
-if (packageJson.name !== 'govp-partner-workbench' || packageJson.publisher !== 'gemacode' || packageJson.version !== '0.3.6') throw new Error('MARKETPLACE_ID_OR_VERSION_INVALID');
+if (packageJson.name !== 'govp-partner-workbench' || packageJson.publisher !== 'gemacode' || packageJson.version !== '0.3.7') throw new Error('MARKETPLACE_ID_OR_VERSION_INVALID');
 if (packageJson.private === true || packageJson.license === 'UNLICENSED') throw new Error('PACKAGE_NOT_PUBLISHABLE');
 if (!packageJson.icon?.endsWith('.png') || icon.size < 1_000) throw new Error('PNG_ICON_REQUIRED');
 if (!packageJson.capabilities || !packageJson.bugs?.url) throw new Error('MARKETPLACE_METADATA_INCOMPLETE');
