@@ -11,12 +11,6 @@ pr:
     include:
       - main
 
-parameters:
-  - name: identityBootstrap
-    displayName: Retrieve the Marketplace publishing identity
-    type: boolean
-    default: false
-
 variables:
   nodeVersion: '24.x'
   marketplaceServiceConnection: 'govp-marketplace-wif'
@@ -29,9 +23,9 @@ stages:
         pool:
           vmImage: ubuntu-latest
         steps:
-          - task: NodeTool@0
+          - task: UseNode@1
             inputs:
-              versionSpec: $(nodeVersion)
+              version: $(nodeVersion)
           - script: npm ci
             displayName: Install locked dependencies
           - script: npm run package
@@ -51,35 +45,6 @@ stages:
               targetPath: output
               artifact: audited-vsix
 
-  - stage: IdentityBootstrap
-    displayName: Retrieve Marketplace publishing identity
-    dependsOn: Validate
-    condition: and(succeeded(), eq(${{ parameters.identityBootstrap }}, true))
-    jobs:
-      - deployment: MarketplaceIdentity
-        displayName: Read Microsoft Entra Marketplace profile
-        environment: vscode-marketplace
-        pool:
-          vmImage: ubuntu-latest
-        strategy:
-          runOnce:
-            deploy:
-              steps:
-                - checkout: none
-                - task: AzureCLI@2
-                  displayName: Retrieve Marketplace identity ID
-                  inputs:
-                    azureSubscription: $(marketplaceServiceConnection)
-                    scriptType: bash
-                    scriptLocation: inlineScript
-                    inlineScript: |
-                      set -euo pipefail
-                      az rest \
-                        --url https://app.vssps.visualstudio.com/_apis/profile/profiles/me \
-                        --resource 499b84ac-1321-427f-aa17-267ca6975798 \
-                        --query id \
-                        --output tsv
-
   - stage: Publish
     displayName: Publish to Visual Studio Marketplace
     dependsOn: Validate
@@ -95,9 +60,9 @@ stages:
             deploy:
               steps:
                 - checkout: self
-                - task: NodeTool@0
+                - task: UseNode@1
                   inputs:
-                    versionSpec: $(nodeVersion)
+                    version: $(nodeVersion)
                 - script: npm ci
                   displayName: Install locked publishing client
                 - task: DownloadPipelineArtifact@2
