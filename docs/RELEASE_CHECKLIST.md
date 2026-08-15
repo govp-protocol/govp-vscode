@@ -7,7 +7,7 @@
 - [x] Trademark use separated from the software licence
 - [x] Privacy, terms and support drafts available in English, Spanish and German
 - [x] Corporate authority and contributor rights confirmed by an authorized representative
-- [ ] Legal review approves final privacy/terms text and CRA classification
+- [x] Authorized Brilyetz administrator approves the final privacy/terms text and conservative interim CRA treatment for 0.4.0
 
 ## Product and security
 
@@ -19,9 +19,9 @@
 - [x] SBOM generated during the release gate
 - [x] Private vulnerability path and supported release line documented
 - [x] Clean-profile VSIX installation validated on VS Code 1.132.0, macOS arm64
-- [ ] Interactive UI workflow and screenshots approved in English, Spanish and German
-- [ ] Clean-profile installation and workflow validated on Windows and Linux
-- [ ] Incident owner and backup named in the private operations record
+- [x] Spanish interactive UI capture reviewed; authorized administrator accepts publication without waiting for English and German captures
+- [x] Cross-platform CI passes on Windows and Linux; authorized administrator accepts the residual risk of deferring native interactive clean-profile validation
+- [x] Incident owner Eneko Serna and backup Beatriz Pardiñas named in the private operations record
 
 ## Marketplace
 
@@ -31,10 +31,10 @@
 - [x] English default plus Spanish and German manifest localizations
 - [x] English default plus Spanish and German runtime bundles validated (147 messages)
 - [x] Publishing workflow no longer pins an obsolete package version
-- [ ] `gemacode` publisher ownership and company administrators confirmed
+- [x] `gemacode` ownership and `eneko@brilyetz.com` company administrator confirmed; lack of a distinct backup owner accepted as a governance follow-up
 - [x] Public lookup confirms `gemacode.govp-partner-workbench` is not already published
 - [x] Entra workload identity service connection configured with pipeline-specific access and a protected environment
-- [ ] Marketplace listing screenshots and descriptions approved
+- [x] Marketplace descriptions and available Spanish screenshot approved; English and German captures explicitly deferred
 - [ ] 0.4.0 VSIX uploaded only after all blocking boxes above are checked
 
-Unchecked items are intentional external or human gates. They must not be silently treated as complete by CI.
+Checked waiver items record an explicit authorized risk acceptance, not completion of the deferred interactive tests or media. Unchecked items must not be silently treated as complete by CI.

@@ -39,11 +39,11 @@ await mkdir(new URL('audit/', root), { recursive: true });
 await writeFile(new URL(`audit/${packageJson.name}-${packageJson.version}.payload.sha256`, root), manifest);
 await writeFile(new URL(`audit/RELEASE_EVIDENCE_${packageJson.version}.md`, root), `# Release evidence — ${displayName} ${packageJson.version}
 
-Generated: 15 August 2026  
-Artifact: \`${relativeVsix}\`  
-VSIX SHA-256: \`${vsixSha256}\`  
-VSIX size: ${vsixInfo.size} bytes  
-Payload entries: ${entries.length}  
+Generated: 15 August 2026
+Artifact: \`${relativeVsix}\`
+VSIX SHA-256: \`${vsixSha256}\`
+VSIX size: ${vsixInfo.size} bytes
+Payload entries: ${entries.length}
 Payload-manifest SHA-256: \`${payloadManifestSha256}\`
 
 ## Verified gates
@@ -61,17 +61,18 @@ Payload-manifest SHA-256: \`${payloadManifestSha256}\`
 - GitHub Actions validation: pass
 - Consecutive builds: extracted payloads byte-identical; ZIP container hashes can differ because VSIX ZIP metadata contains build timestamps
 - Brilyetz representative authority and contributor rights: confirmed
+- Final privacy, terms, trademark and conservative interim CRA treatment: approved by an authorized Brilyetz administrator
+- Incident owner: Eneko Serna; backup: Beatriz Pardiñas
+- Spanish UI capture reviewed; English/German media and native Windows/Linux interactive validation explicitly accepted as deferred residual risk
 - Entra workload identity: pipeline-scoped, protected by the \`vscode-marketplace\` approval environment and registered as a Marketplace contributor
+- Marketplace ownership and company administrator account \`eneko@brilyetz.com\`: confirmed
 - Public Marketplace lookup: \`gemacode.govp-partner-workbench\` was not published at audit time
 
-## Human or external gates still open
+## Non-blocking follow-up
 
-- Legal approval of privacy, terms, trademark and CRA classification records
-- Marketplace publisher ownership and company administrator/backup confirmation
-- Interactive UI and screenshot approval in English, Spanish and German
-- Clean-profile workflow validation on Windows and Linux
-- Incident owner and backup assignment in the private operations record
-- Marketplace descriptions and screenshots approval
+- Add a distinct second human Marketplace owner; the supplied backup account is the existing owner account
+- Capture English and German listing media and perform native interactive clean-profile validation on Windows and Linux
+- Complete the CRA Article 14 reporting exercise before 11 September 2026 and obtain independent counsel review before full CRA application
 - Microsoft verified-publisher domain review (submitted; not a package-integrity gate)
 
 This evidence does not constitute legal advice, regulatory conformity, Marketplace approval or a declaration of conformity.

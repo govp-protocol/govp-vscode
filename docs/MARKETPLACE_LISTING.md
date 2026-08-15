@@ -63,6 +63,6 @@ GOVP-Ergebnisse sind technische Nachweise, keine rechtliche Zertifizierung, beh√
 - Support: `SUPPORT.md`
 - Licence and notices: `LICENSE`, `NOTICE`, `THIRD_PARTY_NOTICES.md`
 
-## Media gate
+## Media decision for 0.4.0
 
-Before publication, capture current 0.4.0 UI screenshots from a clean VS Code profile in English, Spanish and German. Screenshots must contain no personal repository paths, terminal commands, domains, account names, tokens or unpublished customer data. Do not use Microsoft marks in a way that implies endorsement.
+The Spanish 0.4.0 UI capture was reviewed without personal repository paths, terminal commands, domains, account names, tokens or unpublished customer data. On 15 August 2026 an authorized Brilyetz administrator approved publication without waiting for separate English and German captures. Those captures remain a post-release listing improvement. Microsoft marks must not be used in a way that implies endorsement.

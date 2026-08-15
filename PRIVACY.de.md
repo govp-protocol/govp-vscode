@@ -1,7 +1,7 @@
 # Datenschutzhinweis — GOVP Automatic Workbench
 
 Gültig ab: 15. August 2026  
-Status: Veröffentlichungskandidat; vor der Marketplace-Veröffentlichung rechtlich zu prüfen  
+Status: am 15. August 2026 von einem autorisierten Brilyetz-Administrator für die Marketplace-Veröffentlichung von Version 0.4.0 genehmigt
 Sprachen: [English](PRIVACY.md) · [Español](PRIVACY.es.md)
 
 ## Verantwortlicher und Kontakt

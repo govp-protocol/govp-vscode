@@ -1,7 +1,7 @@
 # Privacy notice — GOVP Automatic Workbench
 
 Effective date: 15 August 2026  
-Status: release candidate; legal review required before Marketplace publication  
+Status: approved for 0.4.0 Marketplace publication by an authorized Brilyetz administrator on 15 August 2026
 Translations: [Español](PRIVACY.es.md) · [Deutsch](PRIVACY.de.md)
 
 ## Controller and contact

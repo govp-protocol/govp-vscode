@@ -1,7 +1,7 @@
 # Condiciones de uso — GOVP Automatic Workbench
 
 Fecha de efectividad: 15 de agosto de 2026  
-Estado: candidato de publicación; requiere revisión jurídica antes de publicarse en Marketplace  
+Estado: aprobado para publicar la versión 0.4.0 en Marketplace por un administrador autorizado de Brilyetz el 15 de agosto de 2026
 Idiomas: [English](TERMS.md) · [Deutsch](TERMS.de.md)
 
 ## Prestador y alcance
