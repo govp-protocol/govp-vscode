@@ -1,43 +1,48 @@
 # GOVP Automatic Workbench
 
-GOVP Automatic Workbench crea y comprueba evidencia del trabajo real dentro de VS Code. La capa local funciona sin cuenta, red ni MCP; la conexión remota es opcional.
+[Español](README.es.md) · [Deutsch](README.de.md)
 
-## Primer minuto
+Create and verify evidence of completed work inside Visual Studio Code. The local layer works without an account, network access, or MCP; remote integration is optional and has no default endpoint.
 
-1. Abre una carpeta confiable.
-2. Abre **GOVP → Evidencia** y pulsa **Preparar este proyecto**.
-3. Ejecuta una tarea real, por ejemplo `npm test` o `npm run build`, o usa **GOVP: Registrar trabajo terminado**.
-4. El recibo firmado aparece en `.govp/receipts/`. Usa **GOVP: Verificar evidencia local** para volver a comprobarlo.
+## First minute
 
-La identidad Ed25519 se genera en el equipo y su clave privada se guarda en `SecretStorage` de VS Code; nunca se escribe en el proyecto. La extensión comprueba el recibo antes y después de guardarlo.
+1. Open a trusted local folder.
+2. Open **GOVP → Evidence** and select **Prepare this project**.
+3. Run a real task such as `npm test` or `npm run build`, or use **GOVP: Record completed work**.
+4. Find the signed receipt in `.govp/receipts/` and use **GOVP: Verify local evidence** to check it again.
 
-## Qué significa el resultado
+The local Ed25519 identity is generated on the device. Its private key is kept in VS Code `SecretStorage` and is never written to the project. Every receipt is checked before and after persistence.
 
-- `Íntegro (pendiente de L1)`: firma, hash y contenido coinciden localmente. Aún no hay atribución publicada por el dominio.
-- `evidence_authentic`: L0 y la publicación L1 se han confirmado; falta evaluar confianza vigente L2.
-- `currently_trusted`: las tres capas se han confirmado en el contexto y momento evaluados.
-- `No íntegro`: alguna comprobación criptográfica o de contenido ha fallado.
+## Meaning of a result
 
-Nunca se muestra el genérico “GOVP válido”. Las advertencias del verificador se conservan y se presentan.
+- `Integrity verified (L1 pending)`: local signature, hash, and content match. Domain attribution has not been published.
+- `evidence_authentic`: L0 and L1 publication are confirmed; current L2 trust remains to be evaluated.
+- `currently_trusted`: all three layers are confirmed for the evaluated context and time.
+- `Not integral`: a cryptographic or content check failed.
 
-## Dominio y publicación
+The extension never collapses these states into a generic “GOVP valid” claim. A result is technical evidence, not legal certification or proof that a declared event was truthful.
 
-Configura `govp.domain` con un origen como `https://example.com`, o declara un `homepage` HTTPS en `package.json`. Cada recibo nuevo se añade a `.govp/publication-queue/` con su dominio, canonical y huella. La extensión no publica y nunca recibe la clave del dominio: un publicador autorizado consume esa cola.
+## Domain and publication queue
 
-Si no hay dominio, la evidencia local sigue siendo útil y se muestra: **“tu evidencia es íntegra pero todavía no es atribuible a tu dominio”**.
+Set `govp.domain` to an owned HTTPS origin such as `https://example.com`, or declare an HTTPS `homepage` in the project's `package.json`. Each new receipt is added to `.govp/publication-queue/` with its domain, canonical reference, and digest.
 
-## MCP opcional
+The extension does not publish the queue and never receives the domain private key. A separately authorized publisher may consume it. Without a domain, local evidence remains available but is not yet attributable to an owned domain.
 
-Configura `govp.mcpEndpoint` con un endpoint HTTPS terminado exactamente en `/mcp`. El proveedor remoto debe publicar herramientas ligadas al namespace de `govp.mcpProviderNamespace`; la extensión no acepta herramientas homónimas de otro proveedor.
+## Optional MCP
 
-El alta del servidor es automática al abrir el proyecto. Si el endpoint exige OAuth, VS Code realiza el descubrimiento y presenta su autorización nativa; la extensión no captura ni persiste el token.
+Set `govp.mcpEndpoint` to an HTTPS endpoint ending exactly in `/mcp`. The provider must expose tools bound to `govp.mcpProviderNamespace`; a same-named tool from another provider is rejected.
 
-La integración de bundles es bifásica: primero se descarga y comprueba el inventario completo contra el `artifactSetSha256` aprobado, se muestra una previsualización y se pide confirmación humana. Después solo se crean archivos nuevos. No se sobrescriben archivos, no se siguen symlinks y se excluyen rutas ejecutables o sensibles.
+VS Code performs OAuth discovery and authorization when required. The extension does not read or retain the token. Bundle integration is two-phase: it downloads and verifies the complete inventory against the approved digest, shows a preview, and asks for human confirmation. It then creates files only in an isolated digest-bound directory. It does not overwrite files, follow symlinks, register tasks, or run scripts automatically.
 
-## Límites deliberados
+## Deliberate limits
 
-- La API pública de VS Code no expone un evento global para pruebas iniciadas por otras extensiones. Se observan tareas terminadas y comandos informados como ejecutados por la integración de shell; el recibo conserva el nivel de confianza y si la línea estaba autenticada, sin elevarlo a una atribución L1.
-- L1 y L2 requieren el publicador/verificador de dominio; no se infieren localmente.
-- El MCP no sustituye aprobaciones humanas ni puede mutar producción.
+- VS Code does not expose a global event for tests started by other extensions. The Workbench observes completed tasks and commands reported by shell integration, preserving source and confidence without promoting them to L1 attribution.
+- L1 and L2 require a domain publisher/verifier and are never inferred locally.
+- MCP does not replace human approval and cannot authorize production mutation.
+- Command lines can contain sensitive content. Disable `govp.observeLocalExecution` when automatic local evidence is unsuitable.
 
-Contratos, vectores y referencias están en `schema/`, `conformance/` y `reference/`. Consulta [SECURITY.md](SECURITY.md) para reportar vulnerabilidades.
+## Trust, privacy, and support
+
+The extension has no telemetry and no configured remote destination by default. Read the [privacy notice](PRIVACY.md), [terms](TERMS.md), [security policy](SECURITY.md), [support lifecycle](SUPPORT.md), [Apache-2.0 licence](LICENSE), and [third-party notices](THIRD_PARTY_NOTICES.md) before deployment.
+
+Source, schemas, conformance vectors, SBOM, threat model and release controls are included in the public repository. Official package identity: `gemacode.govp-partner-workbench`.

@@ -3,9 +3,9 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import {
-  artifactSetDigest, domainFromCandidates, executablePathReason, findGovpToolName, parseArtifactInventory,
+  artifactSetDigest, checkedMcpEndpoint, domainFromCandidates, executablePathReason, findGovpToolName, parseArtifactInventory,
   implementationNextAction, implementationStateLabel, parseArtifactBundle, parseConformanceRun, parseImplementation,
-  parseSourceMapping, safeArtifactPath, verifyArtifactContent,
+  parseSourceMapping, safeArtifactPath, UserError, verifyArtifactContent,
 } from '../src/core.js';
 
 test('artifact set matches the shared UTF-8 vector', async () => {
@@ -26,6 +26,14 @@ test('an inferred project URL resolves only to its HTTPS owner origin', () => {
   assert.equal(domainFromCandidates(['https://user:pass@example.com/path']), null);
 });
 
+test('user-facing validation errors preserve a localizable template', () => {
+  assert.throws(() => checkedMcpEndpoint('https://example.com/not-mcp'), (error: unknown) => {
+    assert.ok(error instanceof UserError);
+    assert.equal(error.template, 'The MCP endpoint must end exactly in /mcp.');
+    return true;
+  });
+});
+
 test('runtime safety flags and test digest are enforced', () => {
   const digest = 'a'.repeat(64);
   const base = { id: 'x', state: 'active_lab', servicePackId: 's', specVersion: 1, specSha256: digest, artifactSetSha256: digest, tests: { artifact_set_sha256: digest }, deploymentApproved: true, approvalsAreHumanOnly: true, productionMutationAllowed: false };
@@ -43,7 +51,7 @@ test('remote conformance must be complete and bound to the current bundle', () =
 });
 
 test('an externally approved bundle becomes integrable without claiming production activation', () => {
-  assert.equal(implementationStateLabel('awaiting_deployment_approval', true), 'Bundle autorizado');
+  assert.equal(implementationStateLabel('awaiting_deployment_approval', true), 'Bundle authorized');
   assert.equal(implementationNextAction('awaiting_deployment_approval', true).command, 'integrate');
   assert.equal(implementationNextAction('awaiting_deployment_approval', false).command, 'human-deployment');
 });

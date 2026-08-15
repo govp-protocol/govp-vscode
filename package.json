@@ -1,10 +1,11 @@
 {
   "name": "govp-partner-workbench",
-  "displayName": "GOVP Automatic Workbench",
-  "description": "Crea, comprueba y prepara evidencias GOVP dentro de VS Code, incluso sin cuenta, red ni MCP.",
-  "version": "0.3.7",
+  "displayName": "%extension.displayName%",
+  "description": "%extension.description%",
+  "version": "0.4.0",
   "publisher": "gemacode",
   "license": "Apache-2.0",
+  "pricing": "Free",
   "icon": "media/govp.png",
   "repository": {
     "type": "git",
@@ -17,6 +18,9 @@
   "engines": {
     "vscode": "^1.125.0"
   },
+  "extensionKind": [
+    "workspace"
+  ],
   "categories": [
     "Other",
     "Testing"
@@ -32,33 +36,54 @@
   "capabilities": {
     "virtualWorkspaces": {
       "supported": false,
-      "description": "Los recibos locales y la cola de publicación necesitan un sistema de archivos persistente."
+      "description": "%capabilities.virtualWorkspaces%"
     },
     "untrustedWorkspaces": {
       "supported": "limited",
-      "description": "La verificación local está disponible; la observación, aplicación de bundles y MCP permanecen desactivados hasta confiar en el proyecto."
+      "description": "%capabilities.untrustedWorkspaces%",
+      "restrictedConfigurations": [
+        "govp.domain",
+        "govp.mcpEndpoint",
+        "govp.partnerUrl",
+        "govp.mcpProviderNamespace",
+        "govp.observeLocalExecution"
+      ]
     }
   },
   "activationEvents": [
     "onView:govp.workspace",
-    "onStartupFinished",
-    "onCommand:govp.initializeLocal",
-    "onCommand:govp.captureEvidence",
-    "onCommand:govp.verifyRecord"
+    "onStartupFinished"
   ],
   "main": "./dist/extension.js",
+  "l10n": "./l10n",
   "files": [
     "dist/extension.js",
     "media/govp.png",
     "schema/**",
     "conformance/**",
     "spec/**",
+    "docs/**",
     "README.md",
+    "README.es.md",
+    "README.de.md",
     "CHANGELOG.md",
     "LICENSE",
     "NOTICE",
     "THIRD_PARTY_NOTICES.md",
-    "SECURITY.md"
+    "SECURITY.md",
+    "SUPPORT.md",
+    "PRIVACY.md",
+    "PRIVACY.es.md",
+    "PRIVACY.de.md",
+    "TERMS.md",
+    "TERMS.es.md",
+    "TERMS.de.md",
+    "TRADEMARKS.md",
+    "SBOM.cdx.json",
+    "package.nls.json",
+    "package.nls.es.json",
+    "package.nls.de.json",
+    "l10n/**"
   ],
   "scripts": {
     "clean": "node scripts/clean.mjs",
@@ -66,7 +91,10 @@
     "typecheck": "tsc --noEmit",
     "test:compile": "tsc -p tsconfig.test.json",
     "test": "node --test dist-tests/test/*.test.js",
-    "check": "npm run clean && npm run typecheck && npm run test:compile && npm test && npm audit --omit=dev --audit-level=high && npm run compile && node scripts/audit-package.mjs --dist",
+    "scan:secrets": "node scripts/scan-secrets.mjs",
+    "l10n:check": "node scripts/l10n.mjs",
+    "sbom": "node scripts/sbom.mjs",
+    "check": "npm run clean && npm run typecheck && npm run test:compile && npm test && npm run l10n:check && npm run scan:secrets && npm audit --omit=dev --audit-level=high && npm run compile && npm run sbom && node scripts/audit-package.mjs --dist",
     "package": "npm run check && node scripts/package.mjs"
   },
   "dependencies": {
@@ -100,79 +128,84 @@
         {
           "type": "webview",
           "id": "govp.workspace",
-          "name": "Evidencia"
+          "name": "%view.evidence%"
         }
       ]
     },
     "commands": [
       {
         "command": "govp.initializeLocal",
-        "title": "GOVP: Preparar este proyecto",
+        "title": "%command.initializeLocal%",
         "icon": "$(shield)"
       },
       {
         "command": "govp.showLocalStatus",
-        "title": "GOVP: Ver estado local",
+        "title": "%command.showLocalStatus%",
         "icon": "$(pulse)"
       },
       {
         "command": "govp.captureEvidence",
-        "title": "GOVP: Registrar trabajo terminado",
+        "title": "%command.captureEvidence%",
         "icon": "$(record)"
       },
       {
         "command": "govp.inspectQueue",
-        "title": "GOVP: Ver cola de publicación",
+        "title": "%command.inspectQueue%",
         "icon": "$(list-unordered)"
       },
       {
         "command": "govp.verifyRecord",
-        "title": "GOVP: Verificar evidencia local",
+        "title": "%command.verifyRecord%",
         "icon": "$(verified)"
       },
       {
+        "command": "govp.forgetLocalIdentity",
+        "title": "%command.forgetLocalIdentity%",
+        "icon": "$(trash)"
+      },
+      {
         "command": "govp.connect",
-        "title": "GOVP: Conectar MCP opcional",
+        "title": "%command.connect%",
         "icon": "$(plug)"
       },
       {
         "command": "govp.refresh",
-        "title": "GOVP: Actualizar implantación",
+        "title": "%command.refresh%",
         "icon": "$(refresh)"
       },
       {
         "command": "govp.continue",
-        "title": "GOVP: Continuar implantación",
+        "title": "%command.continue%",
         "icon": "$(arrow-right)"
       },
       {
         "command": "govp.runTests",
-        "title": "GOVP: Consultar pruebas remotas",
+        "title": "%command.runTests%",
         "icon": "$(beaker)"
       },
       {
         "command": "govp.showArtifacts",
-        "title": "GOVP: Revisar bundle remoto",
+        "title": "%command.showArtifacts%",
         "icon": "$(files)"
       },
       {
         "command": "govp.applyBundle",
-        "title": "GOVP: Aplicar bundle revisado",
+        "title": "%command.applyBundle%",
         "icon": "$(cloud-download)"
       },
       {
         "command": "govp.compareWorkspace",
-        "title": "GOVP: Comparar huellas",
+        "title": "%command.compareWorkspace%",
         "icon": "$(diff)"
       },
       {
         "command": "govp.validateMapping",
-        "title": "GOVP: Previsualizar y validar mapeo",
+        "title": "%command.validateMapping%",
         "icon": "$(link)"
       },
       {
         "command": "govp.openPartner",
-        "title": "GOVP: Abrir canal de partners",
+        "title": "%command.openPartner%",
         "icon": "$(link-external)"
       }
     ],
@@ -197,30 +230,30 @@
           "type": "string",
           "format": "uri",
           "default": "",
-          "description": "Dominio HTTPS propietario del proyecto. Se usa para componer la atribución; la extensión nunca recibe su clave privada."
+          "description": "%configuration.domain%"
         },
         "govp.mcpEndpoint": {
           "type": "string",
           "format": "uri",
           "default": "",
-          "description": "Endpoint HTTPS opcional del MCP GOVP, terminado en /mcp. No admite credenciales."
+          "description": "%configuration.mcpEndpoint%"
         },
         "govp.partnerUrl": {
           "type": "string",
           "format": "uri",
           "default": "",
-          "description": "URL HTTPS opcional del canal de partners. No existe ningún Preview configurado por defecto."
+          "description": "%configuration.partnerUrl%"
         },
         "govp.mcpProviderNamespace": {
           "type": "string",
           "default": "mcp_govp_implemen",
           "pattern": "^[a-z0-9_.-]+$",
-          "description": "Namespace exacto usado por VS Code para vincular herramientas al servidor GOVP Implementation MCP."
+          "description": "%configuration.mcpProviderNamespace%"
         },
         "govp.observeLocalExecution": {
           "type": "boolean",
           "default": true,
-          "description": "Genera recibos locales después de tareas y pruebas ejecutadas realmente."
+          "description": "%configuration.observeLocalExecution%"
         }
       }
     },

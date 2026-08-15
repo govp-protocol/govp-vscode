@@ -1,0 +1,85 @@
+trigger:
+  branches:
+    include:
+      - main
+  tags:
+    include:
+      - v*
+
+pr:
+  branches:
+    include:
+      - main
+
+variables:
+  nodeVersion: '24.x'
+  # Set this in the protected Azure DevOps pipeline variables to the name of
+  # the Azure Resource Manager service connection using workload identity.
+  marketplaceServiceConnection: 'SET_IN_AZURE_DEVOPS'
+
+stages:
+  - stage: Validate
+    displayName: Validate immutable VSIX
+    jobs:
+      - job: Build
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - task: NodeTool@0
+            inputs:
+              versionSpec: $(nodeVersion)
+          - script: npm ci
+            displayName: Install locked dependencies
+          - script: npm run package
+            displayName: Test, audit and package
+          - bash: |
+              set -euo pipefail
+              version=`node -p "require('./package.json').version"`
+              package="output/govp-partner-workbench-${version}.vsix"
+              test -f "$package"
+              if [[ "$(Build.SourceBranch)" == refs/tags/* ]]; then
+                test "$(Build.SourceBranchName)" = "v${version}"
+              fi
+              shasum -a 256 "$package"
+            displayName: Verify tag and package identity
+          - task: PublishPipelineArtifact@1
+            inputs:
+              targetPath: output
+              artifact: audited-vsix
+
+  - stage: Publish
+    displayName: Publish to Visual Studio Marketplace
+    dependsOn: Validate
+    condition: and(succeeded(), startsWith(variables['Build.SourceBranch'], 'refs/tags/v'))
+    jobs:
+      - deployment: Marketplace
+        displayName: Publish with Microsoft Entra workload identity
+        environment: vscode-marketplace
+        pool:
+          vmImage: ubuntu-latest
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - task: NodeTool@0
+                  inputs:
+                    versionSpec: $(nodeVersion)
+                - script: npm ci
+                  displayName: Install locked publishing client
+                - task: DownloadPipelineArtifact@2
+                  inputs:
+                    artifact: audited-vsix
+                    path: $(Pipeline.Workspace)/audited-vsix
+                - task: AzureCLI@2
+                  displayName: Publish audited VSIX
+                  inputs:
+                    azureSubscription: $(marketplaceServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      set -euo pipefail
+                      version=`node -p "require('./package.json').version"`
+                      package="$(Pipeline.Workspace)/audited-vsix/govp-partner-workbench-${version}.vsix"
+                      test "$(Build.SourceBranchName)" = "v${version}"
+                      npx --no-install vsce publish --azure-credential --packagePath "$package"

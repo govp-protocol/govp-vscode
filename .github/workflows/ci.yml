@@ -26,9 +26,12 @@ jobs:
       - run: npm run check
       - run: node scripts/demo.mjs
       - run: npm run package
-      - run: shasum -a 256 output/govp-partner-workbench-0.3.0.vsix
+      - name: Resolve release version
+        id: release
+        run: echo "version=$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
+      - run: shasum -a 256 "output/govp-partner-workbench-${{ steps.release.outputs.version }}.vsix"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: govp-partner-workbench-0.3.0
-          path: output/govp-partner-workbench-0.3.0.vsix
+          name: govp-partner-workbench-${{ steps.release.outputs.version }}
+          path: output/govp-partner-workbench-${{ steps.release.outputs.version }}.vsix
           if-no-files-found: error

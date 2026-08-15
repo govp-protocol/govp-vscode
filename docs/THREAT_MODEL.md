@@ -1,4 +1,4 @@
-# Threat model — GOVP Automatic Workbench 0.3.7
+# Threat model — GOVP Automatic Workbench 0.4.0
 
 ## Activos y fronteras
 
@@ -14,6 +14,8 @@ Los activos son la identidad local, los recibos, su cadena, la política, la col
 - **Recibo inventado o editado:** el evento queda dentro del payload firmado, el subject externo queda ligado por SHA-256 y se verifica antes y después de escribir.
 - **Borrado de un eslabón:** cada recibo referencia ID y digest del anterior; el gate local informa referencias ausentes o distintas.
 - **Exfiltración de clave:** la clave local solo se conserva en SecretStorage; la clave de dominio nunca entra en la extensión.
+- **Fuga por logs:** la línea de comando puede formar parte del recibo local, pero no se duplica en el canal de salida de la extensión.
+- **Retención no deseada:** la identidad local puede eliminarse de SecretStorage solo cuando no quedan recibos ni cola, evitando romper una cadena existente por accidente.
 - **Falso verde:** L0, L1 y L2 se presentan por separado; no se transforma una integridad local en confianza vigente.
 - **DoS por entradas:** respuestas MCP, políticas, mapeos, número y tamaño de artefactos están acotados.
 

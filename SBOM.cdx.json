@@ -1,0 +1,103 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "type": "application",
+      "bom-ref": "pkg:npm/govp-partner-workbench@0.4.0",
+      "name": "govp-partner-workbench",
+      "version": "0.4.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "purl": "pkg:npm/govp-partner-workbench@0.4.0"
+    },
+    "properties": [
+      {
+        "name": "govp:build:lockfileSha256",
+        "value": "2fffb62a85ea050da5d3a2e8f9034eb3c8d758ad18054f6e914acfeabdc875c5"
+      },
+      {
+        "name": "govp:build:scope",
+        "value": "runtime"
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/%40govp%2Fverifier@0.1.10",
+      "name": "@govp/verifier",
+      "version": "0.1.10",
+      "purl": "pkg:npm/%40govp%2Fverifier@0.1.10",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "2f722e1cd57b07d66ea3ca1a53a8f155064d4ceaf23ed402c519322db41d7054f9affa4332303cb6d5d10890f1edb430ca184e4caad43a1f65415b142787e5ca"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/%40noble%2Fed25519@3.1.0",
+      "name": "@noble/ed25519",
+      "version": "3.1.0",
+      "purl": "pkg:npm/%40noble%2Fed25519@3.1.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "a5f70e6d16370adbf07da1bd32de57a9974a980429a65dfbb4751eb8184351b8b0241095638fc0e256ccbdbd712a1303c7de80a80a99a4c5ae057d47ba5857e2"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/%40noble%2Fhashes@2.2.0",
+      "name": "@noble/hashes",
+      "version": "2.2.0",
+      "purl": "pkg:npm/%40noble%2Fhashes@2.2.0",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "218a831a24d769be859e20209d2759c2059ba26c69cbd16d62f2cab3bc0252cd9af119084c6f831463b50ccf5cafe137fd18000d1a458eb295689d73eac8ed12"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "pkg:npm/govp-partner-workbench@0.4.0",
+      "dependsOn": [
+        "pkg:npm/%40govp%2Fverifier@0.1.10",
+        "pkg:npm/%40noble%2Fed25519@3.1.0",
+        "pkg:npm/%40noble%2Fhashes@2.2.0"
+      ]
+    }
+  ]
+}

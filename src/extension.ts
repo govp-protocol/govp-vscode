@@ -11,7 +11,6 @@ import {
   findGovpToolName,
   humanBytes,
   implementationNextAction,
-  implementationStateLabel,
   normalizeDomain,
   parseArtifactInventory,
   parseArtifactBundle,
@@ -21,6 +20,7 @@ import {
   parseToolJson,
   safeArtifactPath,
   shortDigest,
+  UserError,
   verifyArtifactContent,
   type ArtifactContent,
   type ArtifactBundle,
@@ -46,10 +46,14 @@ import {
 } from './local.js';
 
 const MCP_PROVIDER_ID = 'govp.automatic-workbench.mcp';
-const MCP_VERSION = '0.3.7';
+const MCP_VERSION = '0.4.0';
 const output = vscode.window.createOutputChannel('GOVP Automatic Workbench', { log: true });
 const decoder = new TextDecoder('utf-8', { fatal: true });
 const encoder = new TextEncoder();
+
+function t(message: string, ...args: Array<string | number | boolean>): string {
+  return vscode.l10n.t(message, ...args);
+}
 
 type LocalStatus = {
   folder: vscode.WorkspaceFolder | null;
@@ -102,7 +106,7 @@ function workspaceFolderFor(uri?: vscode.Uri): vscode.WorkspaceFolder | null {
 
 async function readJson(uri: vscode.Uri, maximumBytes = 2 * 1024 * 1024): Promise<unknown> {
   const bytes = await vscode.workspace.fs.readFile(uri);
-  if (bytes.byteLength > maximumBytes) throw new Error(`El archivo supera ${humanBytes(maximumBytes)}.`);
+  if (bytes.byteLength > maximumBytes) throw new Error(t('The file exceeds {0}.', humanBytes(maximumBytes)));
   return JSON.parse(decoder.decode(bytes)) as unknown;
 }
 
@@ -117,7 +121,7 @@ async function exists(uri: vscode.Uri): Promise<boolean> {
 }
 
 async function atomicCreate(uri: vscode.Uri, bytes: Uint8Array): Promise<void> {
-  if (await exists(uri)) throw new Error(`No se sobrescribe un archivo existente: ${uri.fsPath}`);
+  if (await exists(uri)) throw new Error(t('An existing file will not be overwritten: {0}', uri.fsPath));
   const parent = vscode.Uri.joinPath(uri, '..');
   await vscode.workspace.fs.createDirectory(parent);
   const temporary = vscode.Uri.joinPath(parent, `.${path.posix.basename(uri.path)}.${crypto.randomBytes(8).toString('hex')}.tmp`);
@@ -136,7 +140,7 @@ async function resolveDomain(folder: vscode.WorkspaceFolder): Promise<string | n
     try {
       return normalizeDomain(configured);
     } catch {
-      throw new Error('govp.domain debe ser un origen HTTPS sin ruta, consulta ni credenciales.');
+      throw new Error(t('govp.domain must be an HTTPS origin without a path, query, or credentials.'));
     }
   }
   let homepage: string | null = null;
@@ -146,7 +150,7 @@ async function resolveDomain(folder: vscode.WorkspaceFolder): Promise<string | n
       homepage = String(Reflect.get(packageJson, 'homepage'));
     }
   } catch (error) {
-    if (!isNotFound(error) && !(error instanceof SyntaxError)) output.warn(`No se pudo resolver homepage: ${String(error)}`);
+    if (!isNotFound(error) && !(error instanceof SyntaxError)) output.warn(`Could not resolve homepage: ${String(error)}`);
   }
   return domainFromCandidates([homepage]);
 }
@@ -184,7 +188,7 @@ class LocalWorkbench implements vscode.Disposable {
       vscode.window.onDidStartTerminalShellExecution((event) => this.startedShell.set(event.execution, new Date().toISOString())),
       vscode.window.onDidEndTerminalShellExecution((event) => {
         const command = event.execution.commandLine;
-        output.debug(`Terminal execution ended: confidence=${command.confidence}, trusted=${command.isTrusted}, exit=${String(event.exitCode)}, command=${command.value.slice(0, 160)}`);
+        output.debug(`Terminal execution ended: confidence=${command.confidence}, trusted=${command.isTrusted}, exit=${String(event.exitCode)}`);
         const folder = event.execution.cwd ? vscode.workspace.getWorkspaceFolder(event.execution.cwd) : workspaceFolderFor();
         if (!folder) return;
         const eventClass = classifyTask(command.value);
@@ -222,15 +226,45 @@ class LocalWorkbench implements vscode.Disposable {
     return `govp.local.identity.v1.${suffix}`;
   }
 
+  private identityDisabledKey(folder: vscode.WorkspaceFolder): string {
+    const suffix = crypto.createHash('sha256').update(folder.uri.toString()).digest('hex');
+    return `govp.local.identity.disabled.v1.${suffix}`;
+  }
+
+  private identityDisabled(folder: vscode.WorkspaceFolder): boolean {
+    return this.context.workspaceState.get<boolean>(this.identityDisabledKey(folder), false);
+  }
+
   async identity(folder: vscode.WorkspaceFolder): Promise<LocalIdentity> {
+    if (this.identityDisabled(folder)) throw new Error(t('The local identity is disabled. Run Prepare this project to enable it again.'));
     const key = this.identitySecretKey(folder);
     const stored = await this.context.secrets.get(key);
     if (stored) return parseLocalIdentity(stored);
     const created = generateLocalIdentity();
     await this.context.secrets.store(key, JSON.stringify(created));
     const persisted = await this.context.secrets.get(key);
-    if (!persisted) throw new Error('VS Code no confirmó la custodia de la identidad local.');
+    if (!persisted) throw new Error(t('VS Code did not confirm storage of the local identity.'));
     return parseLocalIdentity(persisted);
+  }
+
+  private async hasLocalRecords(folder: vscode.WorkspaceFolder, child: string): Promise<boolean> {
+    try {
+      const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.joinPath(folder.uri, '.govp', child));
+      return entries.some(([name, type]) => type === vscode.FileType.File && name.endsWith('.json'));
+    } catch (error) {
+      if (isNotFound(error)) return false;
+      throw error;
+    }
+  }
+
+  async forgetIdentity(folder: vscode.WorkspaceFolder): Promise<void> {
+    if (await this.hasLocalRecords(folder, 'receipts') || await this.hasLocalRecords(folder, 'publication-queue')) {
+      throw new Error(t('Archive or delete this project\'s receipts and publication queue first. An existing chain will not be broken.'));
+    }
+    const key = this.identitySecretKey(folder);
+    await this.context.workspaceState.update(this.identityDisabledKey(folder), true);
+    await this.context.secrets.delete(key);
+    if (await this.context.secrets.get(key)) throw new Error(t('VS Code did not confirm deletion of the local identity.'));
   }
 
   async policy(folder: vscode.WorkspaceFolder): Promise<{ policy: WorkbenchPolicy; persisted: boolean }> {
@@ -244,7 +278,8 @@ class LocalWorkbench implements vscode.Disposable {
   }
 
   async initialize(folder: vscode.WorkspaceFolder): Promise<void> {
-    if (!vscode.workspace.isTrusted) throw new Error('Confía en el proyecto para preparar GOVP.');
+    if (!vscode.workspace.isTrusted) throw new Error(t('Trust the workspace before preparing GOVP.'));
+    await this.context.workspaceState.update(this.identityDisabledKey(folder), false);
     await this.identity(folder);
     const policyUri = vscode.Uri.joinPath(folder.uri, '.govp', 'policy.json');
     if (!(await exists(policyUri))) {
@@ -257,7 +292,7 @@ class LocalWorkbench implements vscode.Disposable {
   }
 
   private enqueueObservation(folder: vscode.WorkspaceFolder, observation: LocalObservation): void {
-    if (!vscode.workspace.isTrusted || !configuration(folder).get<boolean>('observeLocalExecution', true)) return;
+    if (!vscode.workspace.isTrusted || this.identityDisabled(folder) || !configuration(folder).get<boolean>('observeLocalExecution', true)) return;
     // A VS Code task may also surface as a terminal-shell event. Treat both callbacks
     // for the same class/exit in this short window as one real execution.
     const dedupe = `${folder.uri.toString()}\0${observation.eventClass}\0${observation.exitCode}`;
@@ -266,19 +301,20 @@ class LocalWorkbench implements vscode.Disposable {
     this.recent.set(dedupe, now);
     for (const [key, timestamp] of this.recent) if (now - timestamp > 60_000) this.recent.delete(key);
     this.recording = this.recording.then(async () => {
-      const { policy } = await this.policy(folder);
+      const { policy, persisted } = await this.policy(folder);
+      if (!persisted) return;
       if (!policy.observe.includes(observation.eventClass as Exclude<EventClass, 'manual'>)) return;
       await this.captureInternal(folder, observation);
     }).catch((error) => {
-      output.error(`No se pudo registrar ${observation.eventClass}: ${String(error)}`);
-      void vscode.window.showErrorMessage(`GOVP no pudo registrar la ejecución: ${errorMessage(error)}`);
+      output.error(`Could not record ${observation.eventClass}: ${String(error)}`);
+      void vscode.window.showErrorMessage(t('GOVP could not record the execution: {0}', errorMessage(error)));
     });
   }
 
   async captureManual(folder: vscode.WorkspaceFolder): Promise<vscode.Uri> {
     const name = await vscode.window.showInputBox({
-      title: 'Crear evidencia local', prompt: '¿Qué trabajo terminado quieres justificar?',
-      placeHolder: 'Revisión de configuración completada', validateInput: (value) => value.trim().length < 3 ? 'Escribe al menos 3 caracteres.' : null,
+      title: t('Create local evidence'), prompt: t('What completed work do you want to substantiate?'),
+      placeHolder: t('Configuration review completed'), validateInput: (value) => value.trim().length < 3 ? t('Enter at least 3 characters.') : null,
     });
     if (!name) throw new vscode.CancellationError();
     return this.capture(folder, {
@@ -298,19 +334,19 @@ class LocalWorkbench implements vscode.Disposable {
     let entries: [string, vscode.FileType][];
     try { entries = await vscode.workspace.fs.readDirectory(dir); } catch (error) { if (isNotFound(error)) return null; throw error; }
     const files = entries.filter(([name, type]) => type === vscode.FileType.File && name.endsWith('.json')).map(([name]) => name);
-    if (files.length > 1000) throw new Error('La carpeta local supera 1000 recibos; archiva y publica antes de continuar.');
+    if (files.length > 1000) throw new Error(t('The local folder exceeds 1,000 receipts; archive and publish before continuing.'));
     const expectedKeyId = (await this.identity(folder)).keyId;
     let latest: LocalReceipt | null = null;
     for (const file of files) {
       const checked = await verifyLocalReceipt(await readJson(vscode.Uri.joinPath(dir, file)), expectedKeyId);
-      if (!checked.result.ok) throw new Error(`El recibo ${file} no es íntegro; no se ampliará la cadena.`);
+      if (!checked.result.ok) throw new Error(t('Receipt {0} is not integral; the chain will not be extended.', file));
       if (!latest || compareUtf8(`${checked.receipt.created_at}\0${String(checked.receipt.envelope.id)}`, `${latest.created_at}\0${String(latest.envelope.id)}`) > 0) latest = checked.receipt;
     }
     return latest ? { receipt: latest, digest: receiptDigest(latest) } : null;
   }
 
   private async captureInternal(folder: vscode.WorkspaceFolder, observation: LocalObservation): Promise<vscode.Uri> {
-    if (!vscode.workspace.isTrusted) throw new Error('La captura está desactivada en proyectos no confiables.');
+    if (!vscode.workspace.isTrusted) throw new Error(t('Capture is disabled in untrusted workspaces.'));
     const [{ policy }, identity, domain, previous] = await Promise.all([
       this.policy(folder), this.identity(folder), resolveDomain(folder), this.latestReceipt(folder),
     ]);
@@ -318,14 +354,14 @@ class LocalWorkbench implements vscode.Disposable {
       domain, previousReceipt: previous ? { id: String(previous.receipt.envelope.id), digest: previous.digest } : null,
     });
     const preflight = await verifyLocalReceipt(receipt);
-    if (!preflight.result.ok) throw new Error('El recibo no superó la verificación previa al guardado.');
+    if (!preflight.result.ok) throw new Error(t('The receipt failed verification before it was saved.'));
     const id = safeArtifactPath(String(receipt.envelope.id));
     const receiptUri = vscode.Uri.joinPath(folder.uri, '.govp', 'receipts', `${id}.json`);
     await atomicCreate(receiptUri, encoder.encode(`${JSON.stringify(receipt, null, 2)}\n`));
     const persisted = await verifyLocalReceipt(await readJson(receiptUri));
     if (!persisted.result.ok || receiptDigest(persisted.receipt) !== receiptDigest(receipt)) {
       try { await vscode.workspace.fs.delete(receiptUri); } catch { /* Keep the failure visible if deletion fails. */ }
-      throw new Error('La comprobación posterior al guardado no coincide.');
+      throw new Error(t('Verification after saving does not match.'));
     }
     if (domain && policy.publication.enqueue) {
       const item = queueItem(receipt, path.posix.relative(folder.uri.path, receiptUri.path), domain, policy.publication.disposition);
@@ -338,7 +374,7 @@ class LocalWorkbench implements vscode.Disposable {
   }
 
   async status(folder: vscode.WorkspaceFolder | null = workspaceFolderFor()): Promise<LocalStatus> {
-    if (!folder) return { folder: null, ready: false, policyPersisted: false, policy: null, domain: null, receiptCount: 0, queueCount: 0, missing: [], lastReceipt: null, warnings: ['Abre una carpeta para usar GOVP.'] };
+    if (!folder) return { folder: null, ready: false, policyPersisted: false, policy: null, domain: null, receiptCount: 0, queueCount: 0, missing: [], lastReceipt: null, warnings: [t('Open a folder to use GOVP.')] };
     const warnings: string[] = [];
     let policy: WorkbenchPolicy | null = null;
     let policyPersisted = false;
@@ -370,7 +406,7 @@ class LocalWorkbench implements vscode.Disposable {
     let entries: [string, vscode.FileType][];
     try { entries = await vscode.workspace.fs.readDirectory(dir); } catch (error) { if (isNotFound(error)) return []; throw error; }
     const names = entries.filter(([name, type]) => type === vscode.FileType.File && name.endsWith('.json')).map(([name]) => name).sort();
-    if (names.length > 1000) { warnings.push('La carpeta local supera 1000 recibos; el gate no acepta una revisión parcial.'); return []; }
+    if (names.length > 1000) { warnings.push(t('The local folder exceeds 1,000 receipts; the gate does not accept a partial review.')); return []; }
     const expectedKeyId = names.length && vscode.workspace.isTrusted ? (await this.identity(folder)).keyId : undefined;
     const result: Array<{ uri: vscode.Uri; receipt: LocalReceipt }> = [];
     for (const name of names) {
@@ -384,13 +420,13 @@ class LocalWorkbench implements vscode.Disposable {
     const byId = new Map(result.map((entry) => [String(entry.receipt.envelope.id), entry.receipt]));
     for (const entry of result) {
       const references = entry.receipt.envelope.references;
-      if (!Array.isArray(references)) { warnings.push(`${path.posix.basename(entry.uri.path)}: referencias inválidas`); continue; }
+      if (!Array.isArray(references)) { warnings.push(t('{0}: invalid references', path.posix.basename(entry.uri.path))); continue; }
       for (const reference of references) {
         if (!reference || typeof reference !== 'object' || Reflect.get(reference, 'type') !== 'govp') continue;
         const previous = byId.get(String(Reflect.get(reference, 'id')));
         const expected = String(Reflect.get(reference, 'digest'));
-        if (!previous) warnings.push(`${path.posix.basename(entry.uri.path)}: falta el recibo anterior ${String(Reflect.get(reference, 'id'))}`);
-        else if (expected !== `sha256:${receiptDigest(previous)}`) warnings.push(`${path.posix.basename(entry.uri.path)}: la cadena anterior no coincide`);
+        if (!previous) warnings.push(t('{0}: previous receipt {1} is missing', path.posix.basename(entry.uri.path), String(Reflect.get(reference, 'id'))));
+        else if (expected !== `sha256:${receiptDigest(previous)}`) warnings.push(t('{0}: the previous chain does not match', path.posix.basename(entry.uri.path)));
       }
     }
     result.sort((left, right) => compareUtf8(left.receipt.created_at, right.receipt.created_at));
@@ -404,7 +440,7 @@ class LocalWorkbench implements vscode.Disposable {
       const policyUri = vscode.Uri.joinPath(folder.uri, '.govp', 'policy.json');
       const diagnostics: vscode.Diagnostic[] = [];
       for (const missing of status.missing) {
-        const diagnostic = new vscode.Diagnostic(new vscode.Range(0, 0, 0, 1), `Falta un recibo íntegro de ${missing}.`, vscode.DiagnosticSeverity.Warning);
+        const diagnostic = new vscode.Diagnostic(new vscode.Range(0, 0, 0, 1), t('An integral {0} receipt is missing.', missing), vscode.DiagnosticSeverity.Warning);
         diagnostic.code = 'GOVP_RECEIPT_MISSING'; diagnostic.source = 'GOVP'; diagnostics.push(diagnostic);
       }
       for (const warning of status.warnings) {
@@ -418,6 +454,7 @@ class LocalWorkbench implements vscode.Disposable {
 }
 
 function mcpEndpoint(folder?: vscode.WorkspaceFolder | null): string | null {
+  if (!vscode.workspace.isTrusted) return null;
   const raw = configuration(folder).get<string>('mcpEndpoint', '').trim();
   return raw ? checkedMcpEndpoint(raw) : null;
 }
@@ -431,10 +468,11 @@ function providerNamespace(folder?: vscode.WorkspaceFolder | null): string {
 }
 
 async function invokeGovp<T>(logicalName: string, input: Record<string, unknown> = {}): Promise<T> {
+  if (!vscode.workspace.isTrusted) throw new Error(t('Trust the workspace before using the optional remote layer.'));
   const endpoint = mcpEndpoint();
-  if (!endpoint) throw new Error('Configura govp.mcpEndpoint para usar la capa remota opcional.');
+  if (!endpoint) throw new Error(t('Configure govp.mcpEndpoint to use the optional remote layer.'));
   const name = findGovpToolName(vscode.lm.tools, logicalName, providerNamespace());
-  if (!name) throw new Error(`El proveedor GOVP configurado no publica la herramienta ${logicalName}. No se usará otro proveedor como sustituto.`);
+  if (!name) throw new Error(t('The configured GOVP provider does not publish the {0} tool. Another provider will not be used as a substitute.', logicalName));
   const cancellation = new vscode.CancellationTokenSource();
   const timer = setTimeout(() => cancellation.cancel(), 30_000);
   try {
@@ -445,7 +483,7 @@ async function invokeGovp<T>(logicalName: string, input: Record<string, unknown>
 }
 
 class RemoteWorkbench {
-  state: RemoteState = { loading: false, connected: false, implementation: null, inventory: null, notice: 'MCP opcional sin conectar.', error: '' };
+  state: RemoteState = { loading: false, connected: false, implementation: null, inventory: null, notice: t('Optional MCP is not connected.'), error: '' };
   constructor(private readonly changed: () => void) {}
   private update(value: Partial<RemoteState>): void { this.state = { ...this.state, ...value }; this.changed(); }
   private fail(error: unknown): void { this.update({ loading: false, error: errorMessage(error), notice: '' }); output.error(errorMessage(error)); }
@@ -456,16 +494,16 @@ class RemoteWorkbench {
       return;
     }
     if (findGovpToolName(vscode.lm.tools, 'get_implementation', providerNamespace())) { await this.refresh(); return; }
-    this.update({ notice: 'Arranca GOVP Automatic Workbench en la lista MCP para autorizarlo.', error: '' });
+    this.update({ notice: t('Start GOVP Automatic Workbench from the MCP list to authorize it.'), error: '' });
     try { await vscode.commands.executeCommand('workbench.mcp.list'); }
     catch { await vscode.commands.executeCommand('workbench.action.showCommands'); }
   }
 
   async refresh(): Promise<void> {
-    this.update({ loading: true, error: '', notice: 'Consultando la implantación…' });
+    this.update({ loading: true, error: '', notice: t('Checking the implementation…') });
     try {
       const implementation = parseImplementation(await invokeGovp<unknown>('get_implementation'));
-      this.update({ loading: false, connected: true, implementation, inventory: null, notice: 'Implantación remota comprobada.' });
+      this.update({ loading: false, connected: true, implementation, inventory: null, notice: t('Remote implementation verified.') });
     } catch (error) { this.fail(error); }
   }
 
@@ -479,28 +517,28 @@ class RemoteWorkbench {
     if (next.command === 'human-deployment') {
       await this.runTests();
       await invokeGovp('request_approval', { gate: 'deployment' });
-      const url = partnerUrl(); if (url) await vscode.env.openExternal(url); else void vscode.window.showInformationMessage('La aprobación es humana. Configura govp.partnerUrl para abrir el canal.');
+      const url = partnerUrl(); if (url) await vscode.env.openExternal(url); else void vscode.window.showInformationMessage(t('Approval is human. Configure govp.partnerUrl to open the channel.'));
       return;
     }
     if (next.command === 'human-spec') {
       await invokeGovp('request_approval', { gate: next.command === 'human-spec' ? 'specification' : 'deployment' });
-      const url = partnerUrl(); if (url) await vscode.env.openExternal(url); else void vscode.window.showInformationMessage('La aprobación es humana. Configura govp.partnerUrl para abrir el canal.');
+      const url = partnerUrl(); if (url) await vscode.env.openExternal(url); else void vscode.window.showInformationMessage(t('Approval is human. Configure govp.partnerUrl to open the channel.'));
       return;
     }
     if (next.command === 'specify') { await invokeGovp('generate_specification'); await this.refresh(); return; }
     if (next.command === 'integrate') { await vscode.commands.executeCommand('govp.applyBundle'); return; }
-    const url = partnerUrl(); if (url) await vscode.env.openExternal(url); else throw new Error('Configura govp.partnerUrl para revisar esta incidencia.');
+    const url = partnerUrl(); if (url) await vscode.env.openExternal(url); else throw new Error(t('Configure govp.partnerUrl to review this incident.'));
   }
 
   async runTests(): Promise<ConformanceRun> {
     const implementation = this.state.implementation;
-    if (!implementation?.artifactSetSha256) throw new Error('No existe un bundle actual para comprobar.');
+    if (!implementation?.artifactSetSha256) throw new Error(t('There is no current bundle to verify.'));
     const run = parseConformanceRun(
       await invokeGovp<unknown>('run_conformance_suite'),
       implementation.artifactSetSha256,
     );
-    await previewJson(run, 'Pruebas remotas');
-    void vscode.window.showInformationMessage(`${run.passed_count}/${run.total_count} pruebas ligadas al bundle superadas.`);
+    await previewJson(run, t('Remote tests'));
+    void vscode.window.showInformationMessage(t('{0}/{1} bundle-bound tests passed.', run.passed_count, run.total_count));
     return run;
   }
 
@@ -509,7 +547,7 @@ class RemoteWorkbench {
     if (!implementation || !implementation.artifactSetSha256
       || !(implementation.state === 'active_lab'
         || (implementation.state === 'awaiting_deployment_approval' && implementation.deploymentApproved))) {
-      throw new Error('No existe un bundle activo y aprobado para integrar.');
+      throw new Error(t('There is no active, approved bundle to integrate.'));
     }
     const inventory = parseArtifactInventory(await invokeGovp<unknown>('list_bundle_artifacts', { implementationId: implementation.id }), implementation.artifactSetSha256);
     this.update({ inventory }); return inventory;
@@ -517,7 +555,7 @@ class RemoteWorkbench {
 
   async artifact(expected: ArtifactInventory['artifacts'][number]): Promise<ArtifactContent> {
     const implementation = this.state.implementation;
-    if (!implementation) throw new Error('No hay implantación remota.');
+    if (!implementation) throw new Error(t('There is no remote implementation.'));
     return verifyArtifactContent(expected, await invokeGovp<unknown>('get_bundle_artifact', {
       implementationId: implementation.id, artifactSetSha256: implementation.artifactSetSha256, path: expected.path,
     }));
@@ -526,7 +564,7 @@ class RemoteWorkbench {
   async loadBundle(): Promise<ArtifactBundle> {
     const implementation = this.state.implementation;
     if (!implementation?.artifactSetSha256 || !implementation.deploymentApproved) {
-      throw new Error('No existe un bundle autorizado para integrar.');
+      throw new Error(t('There is no authorized bundle to integrate.'));
     }
     const bundle = parseArtifactBundle(await invokeGovp<unknown>('get_bundle', {
       implementationId: implementation.id,
@@ -538,21 +576,22 @@ class RemoteWorkbench {
 }
 
 function partnerUrl(): vscode.Uri | null {
+  if (!vscode.workspace.isTrusted) return null;
   const raw = configuration().get<string>('partnerUrl', '').trim();
   if (!raw) return null;
-  return vscode.Uri.parse(checkedHttpsUrl(raw, 'La URL del canal de partners'));
+  return vscode.Uri.parse(checkedHttpsUrl(raw, t('The partner channel URL')));
 }
 
 async function assertNoSymlink(uri: vscode.Uri, root: vscode.Uri): Promise<void> {
-  if (uri.scheme !== 'file' || root.scheme !== 'file') throw new Error('La integración automática solo admite carpetas locales.');
+  if (uri.scheme !== 'file' || root.scheme !== 'file') throw new Error(t('Automatic integration only supports local folders.'));
   const relative = path.relative(root.fsPath, uri.fsPath);
-  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('La ruta sale del proyecto.');
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error(t('The path leaves the workspace.'));
   let current = root;
   for (const segment of relative.split(path.sep)) {
     current = vscode.Uri.joinPath(current, segment);
     try {
       const stat = await vscode.workspace.fs.stat(current);
-      if ((stat.type & vscode.FileType.SymbolicLink) !== 0) throw new Error(`No se integra sobre enlaces simbólicos: ${relative}`);
+      if ((stat.type & vscode.FileType.SymbolicLink) !== 0) throw new Error(t('Integration over symbolic links is refused: {0}', relative));
     } catch (error) { if (!isNotFound(error)) throw error; break; }
   }
 }
@@ -570,7 +609,7 @@ async function preflightBundle(folder: vscode.WorkspaceFolder, remote: RemoteWor
     try {
       const current = await vscode.workspace.fs.readFile(target);
       const digest = crypto.createHash('sha256').update(current).digest('hex');
-      if (digest !== artifact.sha256) throw new Error(`Conflicto: ${artifact.path} ya existe con otro contenido.`);
+      if (digest !== artifact.sha256) throw new Error(t('Conflict: {0} already exists with different content.', artifact.path));
       identical.push(artifact.path);
     } catch (error) { if (isNotFound(error)) creates.push(artifact); else throw error; }
   }
@@ -579,7 +618,7 @@ async function preflightBundle(folder: vscode.WorkspaceFolder, remote: RemoteWor
   let manifestIdentical = false;
   try {
     const current = await vscode.workspace.fs.readFile(manifestTarget);
-    if (!Buffer.from(current).equals(Buffer.from(detachedManifestContent, 'utf8'))) throw new Error('Conflicto: el manifiesto separado ya existe con otro contenido.');
+    if (!Buffer.from(current).equals(Buffer.from(detachedManifestContent, 'utf8'))) throw new Error(t('Conflict: the detached manifest already exists with different content.'));
     manifestIdentical = true;
   } catch (error) { if (!isNotFound(error)) throw error; }
   return { inventory, artifacts, creates, identical, detachedManifestContent, manifestIdentical };
@@ -589,6 +628,33 @@ async function previewJson(value: unknown, title: string): Promise<void> {
   const document = await vscode.workspace.openTextDocument({ language: 'json', content: `${JSON.stringify(value, null, 2)}\n` });
   await vscode.window.showTextDocument(document, { preview: true, viewColumn: vscode.ViewColumn.Beside });
   output.info(`${title} opened read-only as an untitled preview.`);
+}
+
+function localizedState(implementation: ImplementationSnapshot): string {
+  if (implementation.state === 'awaiting_deployment_approval' && implementation.deploymentApproved) return t('Bundle authorized');
+  const labels: Record<ImplementationSnapshot['state'], string> = {
+    queued: t('Ready to define'), specifying: t('Preparing specification'),
+    awaiting_spec_approval: t('Specification ready'), building: t('Building'), testing: t('Testing'),
+    awaiting_deployment_approval: t('Bundle ready'), activating_reference: t('Activating Lab'),
+    active_lab: t('Active in Lab'), frozen: t('Paused'), failed: t('Requires review'),
+  };
+  return labels[implementation.state];
+}
+
+function localizedNextAction(implementation: ImplementationSnapshot): string {
+  const next = implementationNextAction(implementation.state, implementation.deploymentApproved);
+  if (next.command === 'specify') return t('Prepare specification');
+  if (next.command === 'refresh') return t('Refresh status');
+  if (next.command === 'human-spec') return t('Review and decide');
+  if (next.command === 'human-deployment') return t('Review tests and decide');
+  if (next.command === 'integrate') return t('Integrate into this project');
+  return implementation.state === 'frozen' ? t('Open partner channel') : t('Review incident');
+}
+
+function localizedVerdict(label: LocalReceipt['verdict']['label']): string {
+  if (label === 'Íntegro (pendiente de L1)') return t('Integrity verified (L1 pending)');
+  if (label === 'No íntegro') return t('Not integral');
+  return label;
 }
 
 class GovpView implements vscode.WebviewViewProvider {
@@ -611,29 +677,30 @@ class GovpView implements vscode.WebviewViewProvider {
     const token = nonce();
     const lastVerdict = status?.lastReceipt?.verdict;
     const mcpConfigured = Boolean(safeMcpEndpoint());
-    const upsell = status?.receiptCount && !status.domain ? '<div class="notice">tu evidencia es íntegra pero todavía no es atribuible a tu dominio.</div>' : '';
-    this.view.webview.html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><style nonce="${token}">
+    const upsell = status?.receiptCount && !status.domain ? `<div class="notice">${escapeHtml(t('Your evidence is integral but is not yet attributable to your domain.'))}</div>` : '';
+    this.view.webview.html = `<!doctype html><html lang="${escapeHtml(vscode.env.language)}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${token}'; script-src 'nonce-${token}';"><style nonce="${token}">
       :root{color-scheme:light dark}body{font-family:var(--vscode-font-family);padding:14px;color:var(--vscode-foreground)}h2{font-size:17px;margin:0 0 6px}h3{font-size:13px;margin:18px 0 8px}.muted{color:var(--vscode-descriptionForeground);font-size:12px;line-height:1.45}.card{border:1px solid var(--vscode-widget-border);border-radius:10px;padding:12px;margin:10px 0}.status{display:flex;gap:8px;align-items:center}.dot{width:9px;height:9px;border-radius:50%;background:var(--vscode-testing-iconPassed)}button{width:100%;border:0;border-radius:6px;padding:9px;margin-top:8px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);cursor:pointer}button.secondary{background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground)}.notice{border-left:3px solid var(--vscode-editorWarning-foreground);padding:7px 9px;margin-top:9px;font-size:12px}.error{color:var(--vscode-errorForeground);font-size:12px}.pill{display:inline-block;border:1px solid var(--vscode-widget-border);border-radius:99px;padding:3px 7px;margin:3px 3px 0 0;font-size:11px}</style></head><body>
-      <h2>Evidencia del proyecto</h2><div class="muted">Funciona en este equipo. El canal remoto es opcional.</div>
-      <div class="card"><div class="status"><span class="dot"></span><strong>${status?.folder ? 'Listo en este equipo' : 'Abre una carpeta'}</strong></div>
-        <div class="muted">${status?.receiptCount ?? 0} recibos comprobados · ${status?.queueCount ?? 0} pendientes de publicación</div>
-        ${lastVerdict ? `<div class="pill">${escapeHtml(lastVerdict.label)}</div><div class="muted">L0 ${lastVerdict.layers.L0 ? 'sí' : 'no'} · L1 ${lastVerdict.layers.L1 === null ? 'pendiente' : lastVerdict.layers.L1} · L2 ${lastVerdict.layers.L2 === null ? 'pendiente' : lastVerdict.layers.L2}</div>${lastVerdict.warnings.length ? `<div class="notice">Advertencias: ${escapeHtml(lastVerdict.warnings.join(', '))}</div>` : ''}` : ''}
-        ${upsell}${status?.missing.length ? `<div class="notice">Falta evidencia de: ${escapeHtml(status.missing.join(', '))}</div>` : ''}
+      <h2>${escapeHtml(t('Project evidence'))}</h2><div class="muted">${escapeHtml(t('Works on this device. The remote channel is optional.'))}</div>
+      <div class="card"><div class="status"><span class="dot"></span><strong>${escapeHtml(status?.folder ? t('Ready on this device') : t('Open a folder'))}</strong></div>
+        <div class="muted">${escapeHtml(t('{0} verified receipts · {1} awaiting publication', status?.receiptCount ?? 0, status?.queueCount ?? 0))}</div>
+        ${lastVerdict ? `<div class="pill">${escapeHtml(localizedVerdict(lastVerdict.label))}</div><div class="muted">L0 ${escapeHtml(lastVerdict.layers.L0 ? t('yes') : t('no'))} · L1 ${escapeHtml(lastVerdict.layers.L1 === null ? t('pending') : String(lastVerdict.layers.L1))} · L2 ${escapeHtml(lastVerdict.layers.L2 === null ? t('pending') : String(lastVerdict.layers.L2))}</div>${lastVerdict.warnings.length ? `<div class="notice">${escapeHtml(t('Warnings: {0}', lastVerdict.warnings.join(', ')))}</div>` : ''}` : ''}
+        ${upsell}${status?.missing.length ? `<div class="notice">${escapeHtml(t('Missing evidence: {0}', status.missing.join(', ')))}</div>` : ''}
         ${status?.warnings.length ? `<div class="error">${escapeHtml(status.warnings.join(' · '))}</div>` : ''}
-        <button data-command="govp.${status?.policyPersisted ? 'captureEvidence' : 'initializeLocal'}">${status?.policyPersisted ? 'Registrar trabajo terminado' : 'Preparar este proyecto'}</button>
-        <button class="secondary" data-command="govp.showLocalStatus">Comprobar estado</button>
+        <button data-command="govp.${status?.policyPersisted ? 'captureEvidence' : 'initializeLocal'}">${escapeHtml(status?.policyPersisted ? t('Record completed work') : t('Prepare this project'))}</button>
+        <button class="secondary" data-command="govp.showLocalStatus">${escapeHtml(t('Check status'))}</button>
       </div>
-      <h3>Implantación remota</h3><div class="card"><strong>${remote.implementation ? escapeHtml(implementationStateLabel(remote.implementation.state, remote.implementation.deploymentApproved)) : mcpConfigured ? 'Preparada para conectar' : 'Opcional'}</strong>
-        <div class="muted">${escapeHtml(remote.notice)}</div>${remote.implementation ? `<div class="muted">${escapeHtml(shortDigest(remote.implementation.artifactSetSha256))}</div>` : ''}${remote.error ? `<div class="error">${escapeHtml(remote.error)}</div>` : ''}
-        <button class="secondary" data-command="govp.${remote.implementation ? 'continue' : 'connect'}">${remote.implementation ? escapeHtml(implementationNextAction(remote.implementation.state, remote.implementation.deploymentApproved).label) : mcpConfigured ? 'Conectar GOVP' : 'Configurar MCP'}</button>
+      <h3>${escapeHtml(t('Remote implementation'))}</h3><div class="card"><strong>${escapeHtml(remote.implementation ? localizedState(remote.implementation) : mcpConfigured ? t('Ready to connect') : t('Optional'))}</strong>
+        <div class="muted">${escapeHtml(remote.notice)}</div>${remote.implementation ? `<div class="muted">${escapeHtml(remote.implementation.artifactSetSha256 ? shortDigest(remote.implementation.artifactSetSha256) : t('Not yet available'))}</div>` : ''}${remote.error ? `<div class="error">${escapeHtml(remote.error)}</div>` : ''}
+        <button class="secondary" data-command="govp.${remote.implementation ? 'continue' : 'connect'}">${escapeHtml(remote.implementation ? localizedNextAction(remote.implementation) : mcpConfigured ? t('Connect GOVP') : t('Configure MCP'))}</button>
       </div>
       <script nonce="${token}">const vscode=acquireVsCodeApi();document.querySelectorAll('button[data-command]').forEach((button)=>button.addEventListener('click',()=>vscode.postMessage({command:button.dataset.command})));</script></body></html>`;
   }
 }
 
 function errorMessage(error: unknown): string {
-  if (error instanceof vscode.CancellationError) return 'Operación cancelada.';
-  return error instanceof Error ? error.message : String(error);
+  if (error instanceof vscode.CancellationError) return t('Operation cancelled.');
+  if (error instanceof UserError) return t(error.template, ...error.arguments_);
+  return error instanceof Error ? t(error.message) : String(error);
 }
 
 async function commandGuard(action: () => Promise<void>): Promise<void> {
@@ -649,47 +716,56 @@ export function activate(context: vscode.ExtensionContext): void {
   local.onDidChange(() => void view.refresh());
   const register = (name: string, callback: (...args: unknown[]) => Promise<void>) => context.subscriptions.push(vscode.commands.registerCommand(name, (...args) => commandGuard(() => callback(...args))));
 
-  register('govp.initializeLocal', async () => { const folder = workspaceFolderFor(); if (!folder) throw new Error('Abre una carpeta.'); await local.initialize(folder); await view.refresh(); void vscode.window.showInformationMessage('GOVP está preparado en este proyecto.'); });
-  register('govp.captureEvidence', async () => { const folder = workspaceFolderFor(); if (!folder) throw new Error('Abre una carpeta.'); const uri = await local.captureManual(folder); const checked = await verifyLocalReceipt(await readJson(uri)); void vscode.window.showInformationMessage(`${checked.verdict.label}. Recibo guardado después de comprobarlo.`); });
-  register('govp.showLocalStatus', async () => { const status = await local.status(); await view.refresh(); if (!status.folder) throw new Error('Abre una carpeta.'); const message = `${status.receiptCount} recibos íntegros; ${status.queueCount} en cola; ${status.missing.length ? `faltan ${status.missing.join(', ')}` : 'gate local completo'}.`; void vscode.window.showInformationMessage(message); });
-  register('govp.inspectQueue', async () => { const folder = workspaceFolderFor(); if (!folder) throw new Error('Abre una carpeta.'); const uri = vscode.Uri.joinPath(folder.uri, '.govp', 'publication-queue'); await vscode.commands.executeCommand('revealInExplorer', uri); });
+  register('govp.initializeLocal', async () => { const folder = workspaceFolderFor(); if (!folder) throw new Error(t('Open a folder.')); await local.initialize(folder); await view.refresh(); void vscode.window.showInformationMessage(t('GOVP is ready in this workspace.')); });
+  register('govp.captureEvidence', async () => { const folder = workspaceFolderFor(); if (!folder) throw new Error(t('Open a folder.')); const uri = await local.captureManual(folder); const checked = await verifyLocalReceipt(await readJson(uri)); void vscode.window.showInformationMessage(t('{0}. Receipt saved after verification.', localizedVerdict(checked.verdict.label))); });
+  register('govp.showLocalStatus', async () => { const status = await local.status(); await view.refresh(); if (!status.folder) throw new Error(t('Open a folder.')); const gate = status.missing.length ? t('missing {0}', status.missing.join(', ')) : t('local gate complete'); void vscode.window.showInformationMessage(t('{0} integral receipts; {1} queued; {2}.', status.receiptCount, status.queueCount, gate)); });
+  register('govp.inspectQueue', async () => { const folder = workspaceFolderFor(); if (!folder) throw new Error(t('Open a folder.')); const uri = vscode.Uri.joinPath(folder.uri, '.govp', 'publication-queue'); await vscode.commands.executeCommand('revealInExplorer', uri); });
   register('govp.verifyRecord', async (candidate?: unknown) => {
     let uri = candidate instanceof vscode.Uri ? candidate : vscode.window.activeTextEditor?.document.uri;
-    if (!uri) { const picked = await vscode.window.showOpenDialog({ canSelectMany: false, filters: { 'Evidencia GOVP': ['json', 'govp', 'txt'] } }); uri = picked?.[0]; }
+    if (!uri) { const picked = await vscode.window.showOpenDialog({ canSelectMany: false, filters: { [t('GOVP evidence')]: ['json', 'govp', 'txt'] } }); uri = picked?.[0]; }
     if (!uri) throw new vscode.CancellationError();
     const bytes = await vscode.workspace.fs.readFile(uri);
-    if (bytes.byteLength > 2 * 1024 * 1024) throw new Error('La evidencia supera 2 MiB.');
+    if (bytes.byteLength > 2 * 1024 * 1024) throw new Error(t('The evidence exceeds 2 MiB.'));
     const text = decoder.decode(bytes);
     let parsed: unknown = null;
     try { parsed = JSON.parse(text) as unknown; } catch { /* A GOVP L0 record is text, not JSON. */ }
     if (parsed && typeof parsed === 'object' && Reflect.get(parsed, 'schema') === 'org.govp.workbench-receipt/1') {
       const checked = await verifyLocalReceipt(parsed);
-      const warnings = checked.verdict.warnings.length ? ` Advertencias: ${checked.verdict.warnings.join(', ')}.` : '';
-      if (!checked.result.ok) throw new Error(`No íntegro: ${checked.verdict.reasons.join(', ')}.${warnings}`);
-      void vscode.window.showInformationMessage(`${checked.verdict.label}. L1 y L2 siguen pendientes.${warnings}`);
+      const warnings = checked.verdict.warnings.length ? ` ${t('Warnings: {0}.', checked.verdict.warnings.join(', '))}` : '';
+      if (!checked.result.ok) throw new Error(`${t('Not integral: {0}.', checked.verdict.reasons.join(', '))}${warnings}`);
+      void vscode.window.showInformationMessage(`${localizedVerdict(checked.verdict.label)}. ${t('L1 and L2 remain pending.')}${warnings}`);
       return;
     }
     const checked = await verifyText(text);
-    const warnings = checked.warnings.length ? ` Advertencias: ${checked.warnings.join(', ')}.` : '';
+    const warnings = checked.warnings.length ? ` ${t('Warnings: {0}.', checked.warnings.join(', '))}` : '';
     if (!checked.ok) {
       const failures = Object.entries(checked.checks).filter(([, value]) => value === false).map(([key]) => key);
-      throw new Error(`No íntegro: ${failures.join(', ') || 'formato no reconocido'}.${warnings}`);
+      throw new Error(`${t('Not integral: {0}.', failures.join(', ') || t('unrecognized format'))}${warnings}`);
     }
-    void vscode.window.showInformationMessage(`Íntegro (pendiente de L1). L2 sigue pendiente.${warnings}`);
+    void vscode.window.showInformationMessage(`${t('Integrity verified (L1 pending). L2 remains pending.')}${warnings}`);
+  });
+  register('govp.forgetLocalIdentity', async () => {
+    const folder = workspaceFolderFor(); if (!folder) throw new Error(t('Open a folder.'));
+    const confirm = t('Forget local identity');
+    const answer = await vscode.window.showWarningMessage(t('This workspace\'s signing identity will be deleted from SecretStorage. Receipts and the queue must be empty.'), { modal: true }, confirm);
+    if (answer !== confirm) throw new vscode.CancellationError();
+    await local.forgetIdentity(folder);
+    void vscode.window.showInformationMessage(t('The local signing identity has been deleted.'));
   });
   register('govp.connect', () => remote.connect());
   register('govp.refresh', async () => { await remote.refresh(); await view.refresh(); });
   register('govp.continue', () => remote.continueImplementation());
   register('govp.runTests', async () => { await remote.refresh(); await remote.runTests(); });
-  register('govp.showArtifacts', async () => { const bundle = await remote.loadBundle(); const verified = bundle.artifacts.map((artifact) => ({ path: artifact.path, sha256: artifact.sha256, sizeBytes: artifact.sizeBytes })); await previewJson({ approvedArtifactSetSha256: bundle.inventory.artifactSetSha256, verified }, 'Bundle verificado'); });
+  register('govp.showArtifacts', async () => { const bundle = await remote.loadBundle(); const verified = bundle.artifacts.map((artifact) => ({ path: artifact.path, sha256: artifact.sha256, sizeBytes: artifact.sizeBytes })); await previewJson({ approvedArtifactSetSha256: bundle.inventory.artifactSetSha256, verified }, t('Verified bundle')); });
   register('govp.applyBundle', async () => {
-    const folder = workspaceFolderFor(); if (!folder) throw new Error('Abre una carpeta local.'); if (!vscode.workspace.isTrusted) throw new Error('Confía en el proyecto para integrar archivos.');
+    const folder = workspaceFolderFor(); if (!folder) throw new Error(t('Open a local folder.')); if (!vscode.workspace.isTrusted) throw new Error(t('Trust the workspace before integrating files.'));
     const plan = await preflightBundle(folder, remote);
     const relativeRoot = `.govp/implementations/${plan.inventory.artifactSetSha256}`;
     const createCount = plan.creates.length + (plan.manifestIdentical ? 0 : 1);
-    await previewJson({ phase: 'preflight', approvedArtifactSetSha256: plan.inventory.artifactSetSha256, isolatedDestination: relativeRoot, create: [...plan.creates.map((item) => item.path), ...(plan.manifestIdentical ? [] : ['.govp/bundle-manifest.json'])], identical: [...plan.identical, ...(plan.manifestIdentical ? ['.govp/bundle-manifest.json'] : [])] }, 'Previsualización del bundle');
-    const answer = await vscode.window.showWarningMessage(`Instalar ${createCount} ${createCount === 1 ? 'archivo' : 'archivos'} en ${relativeRoot}. El proyecto actual no se modificará.`, { modal: true }, 'Instalar bundle completo');
-    if (answer !== 'Instalar bundle completo') throw new vscode.CancellationError();
+    await previewJson({ phase: 'preflight', approvedArtifactSetSha256: plan.inventory.artifactSetSha256, isolatedDestination: relativeRoot, create: [...plan.creates.map((item) => item.path), ...(plan.manifestIdentical ? [] : ['.govp/bundle-manifest.json'])], identical: [...plan.identical, ...(plan.manifestIdentical ? ['.govp/bundle-manifest.json'] : [])] }, t('Bundle preview'));
+    const install = t('Install complete bundle');
+    const answer = await vscode.window.showWarningMessage(t('Install {0} {1} in {2}. The current project will not be modified.', createCount, createCount === 1 ? t('file') : t('files'), relativeRoot), { modal: true }, install);
+    if (answer !== install) throw new vscode.CancellationError();
     const created: vscode.Uri[] = [];
     try {
       for (const artifact of plan.creates) {
@@ -702,17 +778,18 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     } catch (error) {
       for (const target of created.reverse()) try { await vscode.workspace.fs.delete(target); } catch { /* Report original failure. */ }
-      throw new Error(`La integración se revirtió: ${errorMessage(error)}`);
+      throw new Error(t('Integration was rolled back: {0}', errorMessage(error)));
     }
-    void vscode.window.showInformationMessage(`Bundle completo instalado: ${created.length} ${created.length === 1 ? 'archivo creado' : 'archivos creados'} y ${plan.identical.length + (plan.manifestIdentical ? 1 : 0)} ya idénticos. Abre ${relativeRoot} para ejecutarlo.`);
+    void vscode.window.showInformationMessage(t('Complete bundle installed: {0} {1} and {2} already identical. Open {3} to run it.', created.length, created.length === 1 ? t('file created') : t('files created'), plan.identical.length + (plan.manifestIdentical ? 1 : 0), relativeRoot));
   });
-  register('govp.compareWorkspace', async () => { const plan = await preflightBundle(workspaceFolderFor() ?? (() => { throw new Error('Abre una carpeta.'); })(), remote); await previewJson({ approvedArtifactSetSha256: plan.inventory.artifactSetSha256, isolatedDestination: `.govp/implementations/${plan.inventory.artifactSetSha256}`, toCreate: [...plan.creates.map((item) => item.path), ...(plan.manifestIdentical ? [] : ['.govp/bundle-manifest.json'])], identical: [...plan.identical, ...(plan.manifestIdentical ? ['.govp/bundle-manifest.json'] : [])] }, 'Comparación'); });
+  register('govp.compareWorkspace', async () => { const plan = await preflightBundle(workspaceFolderFor() ?? (() => { throw new Error(t('Open a folder.')); })(), remote); await previewJson({ approvedArtifactSetSha256: plan.inventory.artifactSetSha256, isolatedDestination: `.govp/implementations/${plan.inventory.artifactSetSha256}`, toCreate: [...plan.creates.map((item) => item.path), ...(plan.manifestIdentical ? [] : ['.govp/bundle-manifest.json'])], identical: [...plan.identical, ...(plan.manifestIdentical ? ['.govp/bundle-manifest.json'] : [])] }, t('Comparison')); });
   register('govp.validateMapping', async () => {
-    const folder = workspaceFolderFor(); if (!folder) throw new Error('Abre una carpeta.');
+    const folder = workspaceFolderFor(); if (!folder) throw new Error(t('Open a folder.'));
     const uri = vscode.Uri.joinPath(folder.uri, '.govp', 'source-mapping.json');
-    const mapping = parseSourceMapping(await readJson(uri, 256 * 1024)); await previewJson(mapping, 'Mapeo permitido');
-    const answer = await vscode.window.showInformationMessage('El mapeo cumple la lista permitida. ¿Validarlo también con el proveedor GOVP configurado?', { modal: true }, 'Validar con MCP');
-    if (answer === 'Validar con MCP') await invokeGovp('validate_source_mapping', { mapping });
+    const mapping = parseSourceMapping(await readJson(uri, 256 * 1024)); await previewJson(mapping, t('Allowed mapping'));
+    const validate = t('Validate with MCP');
+    const answer = await vscode.window.showInformationMessage(t('The mapping complies with the allowlist. Also validate it with the configured GOVP provider?'), { modal: true }, validate);
+    if (answer === validate) await invokeGovp('validate_source_mapping', { mapping });
   });
   register('govp.openPartner', async () => { const url = partnerUrl(); if (!url) { await vscode.commands.executeCommand('workbench.action.openSettings', 'govp.partnerUrl'); return; } await vscode.env.openExternal(url); });
 

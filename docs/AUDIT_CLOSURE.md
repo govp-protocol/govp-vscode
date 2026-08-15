@@ -3,7 +3,7 @@
 1. **Paquete mínimo:** esbuild genera un único fichero sin sourcemap ni `sourcesContent`.
 2. **Sin Preview implícito:** endpoint MCP, canal y dominio tienen defaults vacíos.
 3. **URLs estrictas:** HTTPS, sin credenciales; MCP termina exactamente en `/mcp` y el dominio configurado es un origen.
-4. **Proveedor ligado:** solo se invoca el namespace exacto `mcp_govp_aw`; ambigüedad o ausencia falla cerrada.
+4. **Proveedor ligado:** solo se invoca el namespace exacto configurado (`mcp_govp_implemen` por defecto); ambigüedad o ausencia falla cerrada.
 5. **Límites remotos:** timeout de 30 segundos y respuesta máxima de 1 MiB.
 6. **Contrato runtime:** `approvalsAreHumanOnly` debe ser `true` y `productionMutationAllowed` debe ser `false`.
 7. **Pruebas ligadas:** el digest de pruebas debe coincidir con el `artifactSetSha256` aprobado.

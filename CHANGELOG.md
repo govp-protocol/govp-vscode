@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0 — public release candidate
+
+- Establishes Brilyetz, S.L. as the legal product owner while retaining the Gemacode publisher brand.
+- Adds privacy, terms, trademark, support, contribution, data-flow, release and CRA-readiness documentation.
+- Makes English the default Marketplace language and adds Spanish and German manifest and documentation localizations.
+- Removes command text from the extension output log and adds a guarded local-identity deletion command.
+- Generates a deterministic CycloneDX runtime SBOM and audits its inclusion in every package.
+- Replaces version-pinned package scripts and obsolete publication workflows with release-version validation.
+- Preserves the 0.3.x cryptographic, provider-binding and isolated bundle controls without broadening remote defaults.
+
 ## 0.3.7
 
 - Ajusta los mensajes de instalación al singular y plural para mantener una UX clara.

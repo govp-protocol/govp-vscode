@@ -162,7 +162,7 @@ export async function createLocalReceipt(
     evidence: [],
     origin: {
       origin: 'system_observed',
-      observed_by: 'govp-vscode/0.3.7',
+      observed_by: 'govp-vscode/0.4.0',
       observation: { source: observation.source, event_class: observation.eventClass },
     },
   };
