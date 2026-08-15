@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0 — public release candidate
+## 0.4.0 — public release
 
 - Establishes Brilyetz, S.L. as the legal product owner while retaining the Gemacode publisher brand.
 - Adds privacy, terms, trademark, support, contribution, data-flow, release and CRA-readiness documentation.

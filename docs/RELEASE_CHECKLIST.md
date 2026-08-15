@@ -35,6 +35,6 @@
 - [x] Public lookup confirms `gemacode.govp-partner-workbench` is not already published
 - [x] Entra workload identity service connection configured with pipeline-specific access and a protected environment
 - [x] Marketplace descriptions and available Spanish screenshot approved; English and German captures explicitly deferred
-- [ ] 0.4.0 VSIX uploaded only after all blocking boxes above are checked
+- [x] 0.4.0 VSIX published by protected Azure Pipelines run 53 after all blocking decisions above were closed
 
 Checked waiver items record an explicit authorized risk acceptance, not completion of the deferred interactive tests or media. Unchecked items must not be silently treated as complete by CI.
