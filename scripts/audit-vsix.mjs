@@ -57,16 +57,22 @@ Payload-manifest SHA-256: \`${payloadManifestSha256}\`
 - CycloneDX runtime SBOM: 3 components
 - Package identity and safety audit: pass
 - VSIX clean-profile installation: pass on VS Code 1.132.0, macOS arm64
+- Azure Pipelines validation: pass on Linux, Windows and macOS; immutable package job pass
+- GitHub Actions validation: pass
 - Consecutive builds: extracted payloads byte-identical; ZIP container hashes can differ because VSIX ZIP metadata contains build timestamps
+- Brilyetz representative authority and contributor rights: confirmed
+- Entra workload identity: pipeline-scoped, protected by the \`vscode-marketplace\` approval environment and registered as a Marketplace contributor
 - Public Marketplace lookup: \`gemacode.govp-partner-workbench\` was not published at audit time
 
 ## Human or external gates still open
 
-- Brilyetz representative confirmation of ownership, contributor rights and authority
 - Legal approval of privacy, terms, trademark and CRA classification records
-- Marketplace publisher ownership, MFA administrators, Entra workload identity and protected environment approval
+- Marketplace publisher ownership and company administrator/backup confirmation
 - Interactive UI and screenshot approval in English, Spanish and German
 - Clean-profile workflow validation on Windows and Linux
+- Incident owner and backup assignment in the private operations record
+- Marketplace descriptions and screenshots approval
+- Microsoft verified-publisher domain review (submitted; not a package-integrity gate)
 
 This evidence does not constitute legal advice, regulatory conformity, Marketplace approval or a declaration of conformity.
 `);
