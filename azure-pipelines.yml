@@ -11,10 +11,15 @@ pr:
     include:
       - main
 
+parameters:
+  - name: identityBootstrap
+    displayName: Retrieve the Marketplace publishing identity
+    type: boolean
+    default: false
+
 variables:
   nodeVersion: '24.x'
   marketplaceServiceConnection: 'govp-marketplace-wif'
-  identityBootstrap: 'false'
 
 stages:
   - stage: Validate
@@ -49,7 +54,7 @@ stages:
   - stage: IdentityBootstrap
     displayName: Retrieve Marketplace publishing identity
     dependsOn: Validate
-    condition: and(succeeded(), eq(variables['identityBootstrap'], 'true'))
+    condition: and(succeeded(), eq(${{ parameters.identityBootstrap }}, true))
     jobs:
       - deployment: MarketplaceIdentity
         displayName: Read Microsoft Entra Marketplace profile
