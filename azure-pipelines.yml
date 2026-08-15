@@ -14,6 +14,7 @@ pr:
 variables:
   nodeVersion: '24.x'
   marketplaceServiceConnection: 'govp-marketplace-wif'
+  identityBootstrap: 'false'
 
 stages:
   - stage: Validate
@@ -44,6 +45,35 @@ stages:
             inputs:
               targetPath: output
               artifact: audited-vsix
+
+  - stage: IdentityBootstrap
+    displayName: Retrieve Marketplace publishing identity
+    dependsOn: Validate
+    condition: and(succeeded(), eq(variables['identityBootstrap'], 'true'))
+    jobs:
+      - deployment: MarketplaceIdentity
+        displayName: Read Microsoft Entra Marketplace profile
+        environment: vscode-marketplace
+        pool:
+          vmImage: ubuntu-latest
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: none
+                - task: AzureCLI@2
+                  displayName: Retrieve Marketplace identity ID
+                  inputs:
+                    azureSubscription: $(marketplaceServiceConnection)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      set -euo pipefail
+                      az rest \
+                        --url https://app.vssps.visualstudio.com/_apis/profile/profiles/me \
+                        --resource 499b84ac-1321-427f-aa17-267ca6975798 \
+                        --query id \
+                        --output tsv
 
   - stage: Publish
     displayName: Publish to Visual Studio Marketplace
