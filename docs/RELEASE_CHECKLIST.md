@@ -6,7 +6,7 @@
 - [x] Apache-2.0 and third-party notices included
 - [x] Trademark use separated from the software licence
 - [x] Privacy, terms and support drafts available in English, Spanish and German
-- [ ] Corporate authority and contributor rights confirmed by an authorized representative
+- [x] Corporate authority and contributor rights confirmed by an authorized representative
 - [ ] Legal review approves final privacy/terms text and CRA classification
 
 ## Product and security
@@ -33,7 +33,7 @@
 - [x] Publishing workflow no longer pins an obsolete package version
 - [ ] `gemacode` publisher ownership and company administrators confirmed
 - [x] Public lookup confirms `gemacode.govp-partner-workbench` is not already published
-- [ ] Entra workload identity service connection configured
+- [x] Entra workload identity service connection configured with pipeline-specific access and a protected environment
 - [ ] Marketplace listing screenshots and descriptions approved
 - [ ] 0.4.0 VSIX uploaded only after all blocking boxes above are checked
 

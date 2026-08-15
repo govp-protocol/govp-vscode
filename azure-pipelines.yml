@@ -19,7 +19,30 @@ stages:
   - stage: Validate
     displayName: Validate immutable VSIX
     jobs:
-      - job: Build
+      - job: PlatformChecks
+        displayName: Cross-platform checks
+        strategy:
+          matrix:
+            Linux:
+              vmImage: ubuntu-latest
+            Windows:
+              vmImage: windows-latest
+            macOS:
+              vmImage: macos-latest
+        pool:
+          vmImage: $(vmImage)
+        steps:
+          - task: UseNode@1
+            inputs:
+              version: $(nodeVersion)
+          - script: npm ci
+            displayName: Install locked dependencies
+          - script: npm run check
+            displayName: Typecheck, test, localize, scan and audit
+
+      - job: Package
+        displayName: Package immutable VSIX
+        dependsOn: PlatformChecks
         pool:
           vmImage: ubuntu-latest
         steps:
