@@ -13,9 +13,7 @@ pr:
 
 variables:
   nodeVersion: '24.x'
-  # Set this in the protected Azure DevOps pipeline variables to the name of
-  # the Azure Resource Manager service connection using workload identity.
-  marketplaceServiceConnection: 'SET_IN_AZURE_DEVOPS'
+  marketplaceServiceConnection: 'govp-marketplace-wif'
 
 stages:
   - stage: Validate
